@@ -1,0 +1,6 @@
+pyproject.toml
+portfoliolab_api.egg-info/PKG-INFO
+portfoliolab_api.egg-info/SOURCES.txt
+portfoliolab_api.egg-info/dependency_links.txt
+portfoliolab_api.egg-info/requires.txt
+portfoliolab_api.egg-info/top_level.txt

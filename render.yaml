@@ -1,0 +1,14 @@
+# Render Blueprint: New + > Blueprint, pick this repo. Fill the "sync: false" values in the dashboard.
+services:
+  - type: web
+    name: portfoliolab-api
+    runtime: docker
+    rootDir: backend
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - {key: AUTH_MODE, value: clerk}
+      - {key: DATABASE_URL, sync: false}   # Supabase connection string
+      - {key: CLERK_JWKS_URL, sync: false}
+      - {key: CLERK_ISSUER, sync: false}
+      - {key: CORS_ORIGINS, sync: false}   # your Vercel URL, e.g. https://portfoliolab.vercel.app
