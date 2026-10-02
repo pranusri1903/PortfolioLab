@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import os
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -52,7 +53,8 @@ Owned = Annotated[Portfolio, Depends(owned)]
 
 @router.get("/health", tags=["meta"])
 def health() -> dict:
-    return {"status": "ok"}
+    # Render sets RENDER_GIT_COMMIT, so you can see exactly which commit is live
+    return {"status": "ok", "commit": os.environ.get("RENDER_GIT_COMMIT", "dev")[:7]}
 
 
 @router.post("/portfolios", response_model=PortfolioOut, status_code=201)

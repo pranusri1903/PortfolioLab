@@ -39,8 +39,11 @@ class TwelveDataProvider:
 
     def _get(self, path: str, **params) -> dict:
         for attempt in range(2):
-            r = self.http.get(f"{self.URL}/{path}", params={**params, "apikey": self.key})
-            data = r.json()
+            try:
+                r = self.http.get(f"{self.URL}/{path}", params={**params, "apikey": self.key})
+                data = r.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                raise ProviderError(f"could not reach the stock data service ({type(exc).__name__})") from exc
             if data.get("code") == 429 and attempt == 0:  # free plan: 8 requests/minute
                 self.sleep(61)
                 continue
@@ -87,10 +90,15 @@ class MfApiProvider:
         self.http = client or httpx.Client(timeout=30)
 
     def _get(self, path: str, **params):
-        r = self.http.get(f"{self.URL}{path}", params=params)
-        if r.status_code != 200:
-            raise ProviderError(f"mfapi.in returned {r.status_code}")
-        return r.json()
+        try:
+            r = self.http.get(f"{self.URL}{path}", params=params)
+            if r.status_code != 200:
+                raise ProviderError(f"mfapi.in returned {r.status_code}")
+            return r.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise ProviderError(
+                f"could not reach the mutual fund data service ({type(exc).__name__})"
+            ) from exc
 
     def search(self, q: str) -> list[SymbolHit]:
         # Growth plans only: dividend payouts would need distribution handling.

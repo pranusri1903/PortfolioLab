@@ -1,10 +1,10 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useSWRConfig } from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { usePid } from "../layout";
 import { ErrorBox, Loading, SampleBadge } from "@/components/ui";
-import { base, useApi, useData } from "@/lib/api";
+import { API, base, useApi, useData } from "@/lib/api";
 import { CLERK } from "@/lib/auth";
 import type { Portfolio, Summary } from "@/lib/types";
 
@@ -19,6 +19,7 @@ export default function Settings() {
   const p = useData<Portfolio>(base(pid));
   const s = useData<Summary>(`${base(pid)}/summary`);
   const live = useData<Status>("/api/v1/market/status").data;
+  const server = useSWR<{ commit: string }>(`${API}/api/v1/health`, (u: string) => fetch(u).then((r) => r.json())).data;
   if (p.error) return <ErrorBox error={p.error} />;
   if (!p.data || !s.data) return <Loading />;
   async function remove() {
@@ -47,6 +48,7 @@ export default function Settings() {
         <h2 className="font-semibold">Data source</h2>
         <p>Source: {s.data.is_sample_data ? "Synthetic sample data (demo portfolios)" : "External provider"} <SampleBadge show={s.data.is_sample_data} /></p>
         {live && <p>Live providers: stocks &amp; ETFs {live.stocks ? "connected" : "not configured (sample data only)"} · Indian mutual funds {live.mutual_funds ? "connected (AMFI NAV)" : "off"}</p>}
+        {server && <p>Server build: <code>{server.commit}</code></p>}
         <p>Latest price date: {s.data.as_of ?? "none"}</p>
         <p>Status: {s.data.value_complete ? "All held assets have prices" : `Missing prices: ${s.data.unavailable_symbols.join(", ")}`}</p>
       </section>

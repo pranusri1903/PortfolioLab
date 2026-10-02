@@ -2,7 +2,7 @@
 import useSWR from "swr";
 import { useSession } from "@/lib/auth";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public details?: unknown) {

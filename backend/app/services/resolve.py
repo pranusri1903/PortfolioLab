@@ -34,6 +34,7 @@ class Resolver:
         self.cache: dict[str, Resolved | None] = {}
         self.other: dict[str, Resolved | None] = {}
         self.lookups = 0
+        self.error: str | None = None  # last problem talking to the market-data service
 
     @staticmethod
     def _asset(a: Asset) -> Resolved:
@@ -92,7 +93,8 @@ class Resolver:
                 pick = funds.lookup(raw) if funds else None
             else:
                 pick = self._pick(raw, self._search(raw, currency))
-        except ProviderError:
+        except ProviderError as exc:
+            self.error = str(exc)
             return None
         if pick is None:
             return None

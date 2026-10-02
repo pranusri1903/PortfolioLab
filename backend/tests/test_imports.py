@@ -690,3 +690,30 @@ def test_fund_from_the_other_currency_gets_a_helpful_reason(client, funds):
         default_date="2025-06-01",
     ).json()
     assert ok["rows"][0]["status"] == "valid"
+
+
+def test_an_unreachable_data_service_is_reported_not_called_unknown(client):
+    from app.services.live_data import ProviderError
+
+    class Down(CompositeProvider):
+        def __init__(self):
+            super().__init__(stocks=None, funds=None)
+
+        def search(self, q, currency=None):
+            raise ProviderError("could not reach the mutual fund data service (ConnectTimeout)")
+
+    app.dependency_overrides[get_provider] = lambda: Down()
+    pid = new_portfolio(client, "INR")
+    csv = b"symbol,quantity,average_price\nSBI Gold Direct Plan Growth,10,50\n"
+    r = upload(
+        client, pid, csv, "h.csv", path="holdings/import", asset_class="fund", default_date="2025-06-01"
+    ).json()
+    assert (
+        "market-data service had a problem" in r["rows"][0]["reasons"][0]
+        and "ConnectTimeout" in r["rows"][0]["reasons"][0]
+    )
+
+
+def test_health_reports_the_running_commit(client, monkeypatch):
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "abcdef1234567")
+    assert client.get("/api/v1/health").json() == {"status": "ok", "commit": "abcdef1"}

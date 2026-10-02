@@ -231,6 +231,7 @@ def _check_row(
             errors.append(
                 f"Unknown {'fund' if scope == 'fund' else 'symbol'} '{given}'"
                 + (" (use the exact scheme name or its AMFI code)" if scope == "fund" else "")
+                + (f". The market-data service had a problem: {resolver.error}" if resolver.error else "")
             )
     elif p.resolved and p.resolved.currency != currency:
         errors.append(f"{p.symbol} trades in {p.resolved.currency}, not {currency}")
