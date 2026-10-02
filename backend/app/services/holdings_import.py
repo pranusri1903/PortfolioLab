@@ -13,7 +13,7 @@ from app.errors import ApiError
 from app.models import Portfolio
 from app.schemas.portfolio import ImportResponse
 from app.services import csv_import as ci
-from app.services.tables import read_table
+from app.services.tables import Source
 
 FIELDS = ["symbol", "quantity", "price", "cash_amount", "trade_date"]
 # Column names recognised without a mapping (case-insensitive)
@@ -40,7 +40,15 @@ ALIASES = {
         "nav",
         "buy price",
     ],
-    "cash_amount": ["invested", "invested amount", "amount", "cost", "cost value"],
+    "cash_amount": [
+        "invested",
+        "invested amount",
+        "invested value",
+        "amount",
+        "cost",
+        "cost value",
+        "total cost",
+    ],
     "trade_date": ["date", "buy date", "trade_date", "purchase date", "purchase_date"],
 }
 
@@ -59,8 +67,8 @@ def detect(columns: list[str]) -> dict[str, str]:
     return found
 
 
-def to_records(filename: str, content: bytes, mapping: dict | None, date_format: str, default_date: date):
-    table = read_table(filename, content)
+def to_records(src: Source, mapping: dict | None, date_format: str, default_date: date):
+    table = src.table()
     cols = mapping or detect(table.columns)
     records = []
     for rec in table.rows:
@@ -92,8 +100,7 @@ def to_records(filename: str, content: bytes, mapping: dict | None, date_format:
 def run(
     s: Session,
     portfolio: Portfolio,
-    filename: str,
-    content: bytes,
+    src: Source,
     *,
     commit: bool,
     mapping: dict | None,
@@ -108,7 +115,7 @@ def run(
     rows = ci.analyze_records(
         s,
         portfolio,
-        to_records(filename, content, mapping, date_format, default_date),
+        to_records(src, mapping, date_format, default_date),
         scope,
         provider,
         auto_fund=True,

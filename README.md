@@ -35,6 +35,7 @@ Next.js 16 · TypeScript · Tailwind · Recharts · SWR | FastAPI · Pydantic ·
   - **Import holdings**: a file of what you own today. Each row becomes a purchase plus a same-day deposit of its cost, so money paid in is tracked. Optional opening cash. Re-importing the same file is safe (duplicates are skipped).
   - **Import transactions**: your full history from a broker or fund house (buys, sells, SIPs, redemptions, switches, dividends).
   - Both accept **CSV and Excel (.xlsx)** (title rows above the header are skipped) and have separate **Stocks & ETFs / Mutual funds / Both** modes. A file that mixes the wrong kind of asset is rejected row by row with the reason.
+  - **Statements with several tables in one sheet** (personal details, a summary, then the holdings) are handled: every table is found across all sheets and the one whose headers look like holdings or transactions is picked. You can choose another table or name the header row yourself. Personal-details blocks are never read into the app. Totals rows are ignored.
   - **Column mapping** for any layout, with Indian date formats and `Rs 1,00,000` style amounts handled. Fund statements that list *Amount + NAV* get their units worked out.
   - Funds can be listed by **ticker, exact scheme name or AMFI code**; unknown live-priced assets are looked up and added when you confirm. Names are never guessed between several matches.
   - Tradebooks and fund statements usually have no deposits, so there is an **auto-fund** option (a deposit for each purchase).
@@ -112,8 +113,8 @@ CSV or `.xlsx`. Without a column mapping the header must be exactly `trade_date,
 ## Testing
 
 ```bash
-cd backend  && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/mypy app   # 63 tests
-cd frontend && npm test && npm run lint && npm run typecheck && npm run e2e         # 5 unit, 13 browser tests
+cd backend  && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/mypy app   # 69 tests
+cd frontend && npm test && npm run lint && npm run typecheck && npm run e2e         # 5 unit, 14 browser tests
 ```
 Backend tests run on in-memory SQLite and cover buys/sells/fees/dividends/cash flows, oversell and overdraw rejection, cross-user access, CSV preview edge cases, missing prices, insufficient history, zero denominators, Clerk JWT validation, and the Alembic migration. They have **not** been run against PostgreSQL in this repo's environment; CI uses SQLite as well.
 

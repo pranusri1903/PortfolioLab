@@ -7,10 +7,15 @@ from app.models import Asset
 from app.services.live_data import ProviderError, SymbolHit
 
 MAX_LOOKUPS = 25  # provider calls per file
+FILLER = {"fund", "plan", "scheme", "option", "mutual", "the", "of", "and"}  # words fund houses add or drop
 
 
 def norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def tokens(s: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", s.lower()))
 
 
 @dataclass(frozen=True)
@@ -47,6 +52,28 @@ class Resolver:
         a = a or (self.assets.get("MF-" + raw) if raw.isdigit() else None) or self.by_name.get(norm(raw))
         return self._asset(a) if a else self._remote(raw)
 
+    def _search(self, raw: str) -> list[SymbolHit]:
+        """Search the provider with the full text, then again without filler words."""
+        short = " ".join(w for w in raw.split() if w.lower() not in FILLER)
+        hits: dict[str, SymbolHit] = {}
+        for q in dict.fromkeys([raw, short]):
+            if q and not hits:
+                hits = {h.symbol: h for h in self.provider.search(q, self.currency)}
+        return list(hits.values())
+
+    @staticmethod
+    def _pick(raw: str, hits: list[SymbolHit]) -> SymbolHit | None:
+        """Accept a match only when it is unambiguous; never guess between several funds."""
+        exact = [h for h in hits if norm(h.name) == norm(raw) or h.symbol == raw.upper()]
+        if exact:
+            return exact[0]
+        want = tokens(raw) - FILLER
+        close = [h for h in hits if want <= tokens(h.name)]  # every meaningful word of the statement appears
+        for word in ("direct", "regular"):  # the statement says which plan; names may differ in wording
+            if word in want:
+                close = [h for h in close if word in tokens(h.name)] or close
+        return close[0] if len(close) == 1 else (hits[0] if len(hits) == 1 else None)
+
     def _remote(self, raw: str) -> Resolved | None:
         if self.provider is None or self.lookups >= MAX_LOOKUPS or len(raw) > 80:
             return None
@@ -56,11 +83,7 @@ class Resolver:
                 funds = getattr(self.provider, "funds", None)
                 pick = funds.lookup(raw) if funds else None
             else:
-                hits = self.provider.search(raw, self.currency)
-                exact = [h for h in hits if norm(h.name) == norm(raw) or h.symbol == raw.upper()]
-                pick = (
-                    exact[0] if exact else (hits[0] if len(hits) == 1 else None)
-                )  # never guess between several
+                pick = self._pick(raw, self._search(raw))
         except ProviderError:
             return None
         if pick is None:

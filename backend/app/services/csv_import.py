@@ -26,7 +26,7 @@ from app.services import prices
 from app.services.ledger_io import to_txns
 from app.services.resolve import Resolved, Resolver
 from app.services.snapshots import rebuild_snapshots
-from app.services.tables import ROW_ERROR, Table, read_table
+from app.services.tables import ROW_ERROR, Source, Table
 from app.services.validation import fingerprint, to_utc_datetime, validate_fields
 
 EXPECTED_HEADER = ["trade_date", "type", "symbol", "quantity", "price", "fee", "cash_amount", "notes"]
@@ -313,15 +313,14 @@ def analyze_records(
 def analyze(
     s: Session,
     portfolio: Portfolio,
-    filename: str,
-    content: bytes,
+    src: Source,
     mapping: dict | None = None,
     date_format: str = "%Y-%m-%d",
     scope: str | None = None,
     provider=None,
     auto_fund: bool = False,
 ) -> list[Parsed]:
-    records = canonical_records(read_table(filename, content), mapping, date_format)
+    records = canonical_records(src.table(), mapping, date_format)
     return analyze_records(s, portfolio, records, scope, provider, auto_fund)
 
 
@@ -351,8 +350,7 @@ def to_response(rows: list[Parsed], committed: bool, result: ImportCounts | None
 def preview(
     s,
     portfolio,
-    filename,
-    content,
+    src,
     mapping=None,
     date_format="%Y-%m-%d",
     scope=None,
@@ -360,7 +358,7 @@ def preview(
     auto_fund=False,
 ):
     return to_response(
-        analyze(s, portfolio, filename, content, mapping, date_format, scope, provider, auto_fund),
+        analyze(s, portfolio, src, mapping, date_format, scope, provider, auto_fund),
         False,
         None,
     )
@@ -461,13 +459,12 @@ def write_rows(
 def commit(
     s,
     portfolio,
-    filename,
-    content,
+    src,
     mapping=None,
     date_format="%Y-%m-%d",
     scope=None,
     provider=None,
     auto_fund=False,
 ):
-    rows = analyze(s, portfolio, filename, content, mapping, date_format, scope, provider, auto_fund)
+    rows = analyze(s, portfolio, src, mapping, date_format, scope, provider, auto_fund)
     return write_rows(s, portfolio, rows, provider, auto_fund=auto_fund)

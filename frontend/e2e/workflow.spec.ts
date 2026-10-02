@@ -178,3 +178,28 @@ test("my own USD portfolio can sit alongside the USD demo", async ({ page }) => 
   await expect(page.getByText("Your USD portfolio is empty")).toBeVisible();
   await expect(page.getByLabel("Portfolio").locator("option")).toHaveCount(2);
 });
+
+test("a statement with stacked tables imports from the right one", async ({ page }) => {
+  await signIn(page, `e2e_st_${Date.now()}`);
+  await page.getByRole("button", { name: "Start empty" }).click();
+  await page.getByRole("link", { name: "Import holdings" }).click();
+  const sheet = [
+    "Personal Details", "Name,Test User", "PAN,AAAAA0000A", "", "",
+    "HOLDING SUMMARY", "",
+    "Total Investments,Current Portfolio Value,Profit/Loss,Profit/Loss %,XIRR", "9000,9500,500,5%,4%", "", "",
+    "HOLDINGS AS ON 2026-10-02", "",
+    "Symbol,Exchange,Category,Source,Qty,Invested Value,Current Value", "",
+    "ACME,NYSE,Equity,Broker,10,500,520",
+    "BOLT,NYSE,Equity,Broker,5,400,410",
+  ].join("\n");
+  await page.getByLabel("CSV or Excel file").setInputFiles({ name: "statement.csv", mimeType: "text/csv", buffer: Buffer.from(sheet) });
+  await expect(page.getByText("This file contains 2 tables")).toBeVisible();
+  await expect(page.getByText(/no buy-date column/)).toBeVisible();
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByRole("status")).toContainText("2 valid");
+  await page.getByRole("button", { name: /Confirm import of 2 rows/ }).click();
+  await expect(page.getByRole("status")).toContainText("Imported 2");
+  await page.getByRole("link", { name: "View holdings" }).click();
+  await expect(page.getByRole("link", { name: "ACME" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "BOLT" })).toBeVisible();
+});

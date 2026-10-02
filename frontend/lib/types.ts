@@ -34,7 +34,10 @@ export type ImportRow = {
   row_number: number; status: "valid" | "invalid" | "duplicate"; reasons: string[]; data: Record<string, string | null>;
   resolved_symbol: string | null; resolved_name: string | null; will_add_asset: boolean;
 };
-export type Inspect = { columns: string[]; sample: Record<string, string>[]; row_count: number };
+export type FoundTable = { index: number; sheet: string; title: string; header_row: number; columns: string[]; row_count: number };
+export type Inspect = {
+  tables: FoundTable[]; selected: number | null; columns: string[]; sample: Record<string, string>[]; row_count: number; header_row: number;
+};
 export type ImportResult = {
   committed: boolean; total_rows: number; valid: number; invalid: number; duplicate: number; rows: ImportRow[];
   result: { imported: number; skipped: number; rejected: number } | null;

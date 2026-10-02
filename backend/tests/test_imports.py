@@ -264,3 +264,232 @@ def test_inspect_returns_columns_and_samples(client):
         client.post("/api/v1/import/inspect", files={"file": ("x.csv", io.BytesIO(b"a,b,c\n"))}).status_code
         == 401
     )
+
+
+# ---- statements with several tables in one sheet (e.g. a Groww-style holdings export) -----------
+
+GROWW_FUNDS = {
+    "sbi gold direct plan growth": SymbolHit(
+        "MF-119788", "SBI GOLD FUND - Direct Plan - Growth", "MUTUAL_FUND", "INR", "AMFI"
+    ),
+    "hdfc infrastructure fund direct growth": SymbolHit(
+        "MF-118979", "HDFC Infrastructure Fund - Direct Plan - Growth Option", "MUTUAL_FUND", "INR", "AMFI"
+    ),
+}
+
+
+class GrowwProvider(FundProvider):
+    def search(self, q, currency=None):
+        hit = GROWW_FUNDS.get(q.lower())
+        return [hit] if hit and currency in (None, "INR") else []
+
+
+def groww_sheet(extra_rows=()):
+    """Synthetic data in the layout of a mutual-fund holdings export: details, summary, then holdings."""
+    return xlsx(
+        [
+            ["Personal Details"],
+            ["Name", "Test User"],
+            ["Mobile Number", "0000000000"],
+            ["PAN", "AAAAA0000A"],
+            [],
+            [],
+            ["HOLDING SUMMARY"],
+            [],
+            ["Total Investments", "Current Portfolio Value", "Profit/Loss", "Profit/Loss %", "XIRR"],
+            [76496.2, 75291.72, -1204.49, "-1.57%", "-4.98%"],
+            [],
+            [],
+            ["HOLDINGS AS ON 2026-10-02"],
+            [],
+            [
+                "Scheme Name",
+                "AMC",
+                "Category",
+                "Sub-category",
+                "Folio No.",
+                "Source",
+                "Units",
+                "Invested Value",
+                "Current Value",
+                "Returns",
+                "XIRR",
+            ],
+            [],
+            [
+                "SBI Gold Direct Plan Growth",
+                "SBI Mutual Fund",
+                "Commodities",
+                "Gold",
+                "111",
+                "Groww",
+                970.019,
+                43497.83,
+                43521.07,
+                23.2380838,
+                "0.18%",
+            ],
+            [
+                "HDFC Infrastructure Fund Direct Growth",
+                "HDFC Mutual Fund",
+                "Equity",
+                "Sectoral",
+                "222",
+                "Groww",
+                634.17,
+                32998.37,
+                31770.65,
+                -1227.72336,
+                "-11.8%",
+            ],
+            *extra_rows,
+        ]
+    )
+
+
+def test_inspect_finds_every_table_and_picks_the_holdings(client):
+    r = client.post(
+        "/api/v1/import/inspect", headers=H, files={"file": ("g.xlsx", io.BytesIO(groww_sheet()))}
+    ).json()
+    assert [t["title"] for t in r["tables"]] == ["HOLDING SUMMARY", "HOLDINGS AS ON 2026-10-02"]
+    assert r["selected"] == 1 and r["columns"][0] == "Scheme Name" and r["row_count"] == 2
+    assert "Test User" not in str(r) and "AAAAA0000A" not in str(r)  # personal details never leave the parser
+    other = client.post(
+        "/api/v1/import/inspect",
+        headers=H,
+        data={"table_index": "0"},
+        files={"file": ("g.xlsx", io.BytesIO(groww_sheet()))},
+    ).json()
+    assert other["columns"][0] == "Total Investments" and other["row_count"] == 1
+
+
+def test_holdings_import_reads_the_right_table_with_no_mapping(client, funds):
+    app.dependency_overrides[get_provider] = lambda: GrowwProvider()
+    pid = new_portfolio(client, "INR")
+    kw = dict(path="holdings/import", asset_class="fund", default_date="2025-06-01")
+    pre = upload(client, pid, groww_sheet(), "g.xlsx", **kw).json()
+    assert [r["status"] for r in pre["rows"]] == ["valid", "valid"], pre
+    assert [r["resolved_symbol"] for r in pre["rows"]] == ["MF-119788", "MF-118979"]
+    done = upload(client, pid, groww_sheet(), "g.xlsx", commit=True, **kw).json()
+    assert done["result"]["imported"] == 2
+    held = {h["symbol"]: h for h in client.get(f"{BASE}/{pid}/holdings", headers=H).json()["holdings"]}
+    assert D(held["MF-119788"]["quantity"]) == D("970.019")
+    assert abs(D(held["MF-119788"]["cost_basis"]) - D("43497.83")) < D(
+        "0.01"
+    )  # invested value became cost basis
+    s = client.get(f"{BASE}/{pid}/summary", headers=H).json()
+    assert abs(D(s["net_contributions"]) - D("76496.20")) < D("0.05")
+
+
+def test_choosing_a_table_and_setting_the_header_row_manually(client):
+    pid = new_portfolio(client, "INR")
+    mapping = json.dumps({"symbol": "Total Investments", "quantity": "Profit/Loss"})
+    first = upload(
+        client,
+        pid,
+        groww_sheet(),
+        "g.xlsx",
+        path="holdings/import",
+        table_index="0",
+        mapping=mapping,
+        default_date="2025-06-01",
+    ).json()
+    assert first["total_rows"] == 1  # the summary table, because it was asked for
+    by_row = upload(
+        client,
+        pid,
+        groww_sheet(),
+        "g.xlsx",
+        path="holdings/import",
+        header_row="15",
+        default_date="2025-06-01",
+    ).json()
+    assert by_row["total_rows"] == 2
+    bad = upload(
+        client,
+        pid,
+        groww_sheet(),
+        "g.xlsx",
+        path="holdings/import",
+        header_row="2",
+        default_date="2025-06-01",
+    )
+    assert (
+        bad.status_code == 422 and bad.json()["error"]["code"] == "invalid_csv_header"
+    )  # row 2 is "Name, Test User"
+    assert (
+        upload(
+            client,
+            pid,
+            groww_sheet(),
+            "g.xlsx",
+            path="holdings/import",
+            table_index="9",
+            default_date="2025-06-01",
+        ).status_code
+        == 422
+    )
+
+
+def test_a_total_row_ends_the_table(client):
+    pid = new_portfolio(client, "INR")
+    sheet = groww_sheet([["Total", "", "", "", "", "", 1604.189, 76496.2, 75291.72, "", ""]])
+    r = upload(client, pid, sheet, "g.xlsx", path="holdings/import", default_date="2025-06-01").json()
+    assert r["total_rows"] == 2
+
+
+def test_multi_table_csv_and_second_sheet(client):
+    pid = new_portfolio(client)
+    csv = "\n".join(
+        [
+            "Account report",
+            "",
+            "Totals,Value,Count",
+            "1,2,3",
+            "",
+            "symbol,quantity,average_price,date",
+            "ACME,10,50,2025-01-10",
+        ]
+    )
+    r = upload(
+        client, pid, csv.encode(), "multi.csv", path="holdings/import", default_date="2025-06-01"
+    ).json()
+    assert r["total_rows"] == 1 and r["rows"][0]["status"] == "valid"
+    wb = Workbook()
+    wb.active.title = "About"
+    wb.active.append(["Generated by broker"])
+    wb.create_sheet("Holdings").append(["symbol", "quantity", "average_price"])
+    wb["Holdings"].append(["CRST", 5, 100])
+    out = io.BytesIO()
+    wb.save(out)
+    r2 = upload(
+        client, pid, out.getvalue(), "two.xlsx", path="holdings/import", default_date="2025-06-01"
+    ).json()
+    assert r2["rows"][0]["resolved_symbol"] == "CRST"
+
+
+def test_fund_names_match_despite_wording_but_never_guess():
+    from app.services.resolve import Resolver
+
+    class Stub:
+        funds = None
+
+        def __init__(self, hits):
+            self.hits, self.queries = hits, []
+
+        def search(self, q, currency=None):
+            self.queries.append(q)
+            return (
+                self.hits if "plan" not in q.lower() else []
+            )  # the long wording finds nothing; the short one does
+
+    direct = SymbolHit("MF-1", "Alpha Gold Fund - Direct Plan - Growth", "MUTUAL_FUND", "INR", "AMFI")
+    regular = SymbolHit("MF-2", "Alpha Gold Fund - Regular Plan - Growth", "MUTUAL_FUND", "INR", "AMFI")
+    stub = Stub([direct, regular])
+    got = Resolver({}, stub, "INR").resolve("Alpha Gold Direct Plan Growth")
+    assert (
+        got and got.symbol == "MF-1" and len(stub.queries) == 2
+    )  # retried without filler words, then picked Direct
+    assert (
+        Resolver({}, Stub([direct, regular]), "INR").resolve("Alpha Gold Plan") is None
+    )  # ambiguous: left unresolved

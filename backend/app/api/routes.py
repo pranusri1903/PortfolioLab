@@ -33,7 +33,7 @@ from app.schemas.portfolio import (
 from app.services import analytics as analytics_service
 from app.services import csv_import, holdings, holdings_import, performance, sip, transactions
 from app.services.demo import load_demo_transactions, seed_market_data
-from app.services.tables import read_table
+from app.services.tables import Source, read_tables
 
 router = APIRouter(prefix="/api/v1")
 Db = Annotated[Session, Depends(get_session)]
@@ -175,14 +175,15 @@ async def import_transactions(
     date_format: str = Form("%Y-%m-%d"),
     asset_class: str = Form("all", pattern="^(all|stock|fund)$"),
     auto_fund: bool = Form(False),
+    table_index: int | None = Form(None),
+    header_row: int | None = Form(None),
 ):
     """CSV or Excel. asset_class limits the file to stocks & ETFs ("stock") or mutual funds ("fund")."""
     run = csv_import.commit if commit else csv_import.preview
     return run(
         db,
         p,
-        file.filename or "upload.csv",
-        await file.read(),
+        Source(file.filename or "upload.csv", await file.read(), table_index, header_row),
         _mapping(mapping),
         date_format,
         _scope(asset_class),
@@ -203,13 +204,14 @@ async def import_holdings(
     asset_class: str = Form("all", pattern="^(all|stock|fund)$"),
     default_date: date = Form(...),
     cash: Decimal = Form(Decimal("0")),
+    table_index: int | None = Form(None),
+    header_row: int | None = Form(None),
 ):
     """A holdings file (what I own today). Each row becomes a BUY plus a same-day DEPOSIT of its cost."""
     return holdings_import.run(
         db,
         p,
-        file.filename or "upload.csv",
-        await file.read(),
+        Source(file.filename or "upload.csv", await file.read(), table_index, header_row),
         commit=commit,
         mapping=_mapping(mapping),
         date_format=date_format,
@@ -221,10 +223,41 @@ async def import_holdings(
 
 
 @router.post("/import/inspect")
-async def inspect_file(_: User, file: UploadFile = File(...)):
-    """Column names and a few sample rows from a CSV/Excel upload, to build the column-mapping screen."""
-    t = read_table(file.filename or "upload.csv", await file.read())
-    return {"columns": t.columns, "sample": t.rows[:5], "row_count": len(t.rows)}
+async def inspect_file(
+    _: User,
+    file: UploadFile = File(...),
+    table_index: int | None = Form(None),
+    header_row: int | None = Form(None),
+):
+    """What is in an uploaded CSV/Excel file: every table found, and the columns and sample rows of the
+    chosen one (default: the table whose headers look most like holdings or transactions)."""
+    name, content = file.filename or "upload.csv", await file.read()
+    tables = read_tables(name, content)
+    chosen = Source(name, content, table_index, header_row).table()
+    best = max(range(len(tables)), key=lambda i: tables[i].score)
+    selected = (
+        table_index
+        if table_index is not None and header_row is None
+        else (best if header_row is None else None)
+    )
+    return {
+        "tables": [
+            {
+                "index": i,
+                "sheet": t.sheet,
+                "title": t.title,
+                "header_row": t.header_row,
+                "columns": t.columns,
+                "row_count": len(t.rows),
+            }
+            for i, t in enumerate(tables)
+        ],
+        "selected": selected,
+        "columns": chosen.columns,
+        "sample": chosen.rows[:5],
+        "row_count": len(chosen.rows),
+        "header_row": chosen.header_row,
+    }
 
 
 def _mapping(raw: str | None) -> dict | None:

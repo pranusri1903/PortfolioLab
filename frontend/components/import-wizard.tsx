@@ -19,7 +19,7 @@ const DATE_FORMATS = [["%Y-%m-%d", "YYYY-MM-DD"], ["%d/%m/%Y", "DD/MM/YYYY"], ["
 const GUESS: Record<string, RegExp[]> = {
   trade_date: [/buy.?date|purchase.?date|trade.?date/i, /date/i], type: [/type|action|side/i, /transaction|narration/i],
   symbol: [/symbol|ticker|scrip|instrument/i, /scheme|fund|isin|name/i], quantity: [/qty|quantity|units|shares/i],
-  price: [/avg.*(price|cost)|average/i, /price|rate|nav/i], fee: [/fee|brokerage|charge/i], cash_amount: [/amount|invested|value|net/i], notes: [/note|remark|narration/i],
+  price: [/avg.*(price|cost)|average/i, /price|rate|nav/i], fee: [/fee|brokerage|charge/i], cash_amount: [/invested|cost/i, /amount/i, /value|net/i], notes: [/note|remark|narration/i],
 };
 const guess = (field: string, cols: string[]) => { for (const re of GUESS[field] ?? []) { const c = cols.find((x) => re.test(x)); if (c) return c; } return ""; };
 
@@ -57,20 +57,29 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
   const [res, setRes] = useState<ImportResult>();
   const [error, setError] = useState<Error>();
   const [busy, setBusy] = useState(false);
+  const [tableIndex, setTableIndex] = useState<number | null>(null);
+  const [headerRow, setHeaderRow] = useState("");
   const fields = fieldsFor(kind, cls);
   const canonical = kind === "transactions" && info?.columns.join(",") === CANONICAL;
   const needsFunding = !autoFund && kind === "transactions" && !!res && !res.committed && res.rows.some((r) => r.reasons.some((x) => x.includes("negative")));
 
-  async function pick(f?: File) {
-    setFile(f); setRes(undefined); setInfo(undefined); setError(undefined);
-    if (!f) return;
+  async function inspect(f: File, index: number | null, header: string, forClass: Cls = cls) {
+    setRes(undefined); setError(undefined);
     const body = new FormData();
     body.set("file", f);
+    if (header) body.set("header_row", header);
+    else if (index !== null) body.set("table_index", String(index));
     try {
       const i: Inspect = await api("/api/v1/import/inspect", { method: "POST", body });
       setInfo(i);
-      setMapping(Object.fromEntries(fieldsFor(kind, cls).map(([k]) => [k, guess(k, i.columns)])));
+      setTableIndex(header ? null : i.selected);
+      setMapping(Object.fromEntries(fieldsFor(kind, forClass).map(([k]) => [k, guess(k, i.columns)])));
     } catch (e) { setError(e as Error); }
+  }
+
+  async function pick(f?: File) {
+    setFile(f); setInfo(undefined); setHeaderRow(""); setTableIndex(null);
+    if (f) await inspect(f, null, "");
   }
 
   async function run(commit: boolean, fund = autoFund) {
@@ -78,6 +87,8 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
     const body = new FormData();
     body.set("file", file!);
     body.set("asset_class", cls);
+    if (headerRow) body.set("header_row", headerRow);
+    else if (tableIndex !== null) body.set("table_index", String(tableIndex));
     if (!canonical) { body.set("mapping", JSON.stringify(mapping)); body.set("date_format", dateFormat); }
     if (kind === "holdings") { body.set("default_date", defaultDate); if (cash) body.set("cash", cash); }
     else body.set("auto_fund", String(fund));
@@ -112,6 +123,25 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
         <span className="btn">Browse</span>
       </label>
 
+      {info && (info.tables.length > 1 || headerRow) && (
+        <div className="rounded-xl bg-indigo-50 p-3 text-sm dark:bg-indigo-500/10">
+          <p className="mb-2"><b>This file contains {info.tables.length} tables.</b> We picked the one that looks like your {kind}; change it if that&apos;s wrong.</p>
+          <label className="block text-xs">Table to import
+            <select className="input mt-1 w-full" value={headerRow ? "" : (tableIndex ?? "")} onChange={(e) => { setHeaderRow(""); inspect(file!, Number(e.target.value), ""); }}>
+              {headerRow && <option value="">Custom header row</option>}
+              {info.tables.map((t) => <option key={t.index} value={t.index}>{`${t.sheet ? t.sheet + " · " : ""}${t.title || `Table ${t.index + 1}`} — ${t.row_count} rows, header on row ${t.header_row} (${t.columns.slice(0, 3).join(", ")}…)`}</option>)}
+            </select>
+          </label>
+        </div>)}
+      {info && (
+        <details className="text-xs text-slate-500">
+          <summary className="cursor-pointer">Wrong columns? Tell us which row holds the column names</summary>
+          <div className="mt-2 flex items-center gap-2">
+            <label>Header row number <input className="input w-20" inputMode="numeric" value={headerRow} onChange={(e) => setHeaderRow(e.target.value.replace(/\D/g, ""))} /></label>
+            <button className="btn" disabled={!headerRow} onClick={() => inspect(file!, null, headerRow)}>Use this row</button>
+          </div>
+        </details>)}
+
       {info && !canonical && (
         <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
           <p className="mb-2 text-sm font-medium">Match your file&apos;s columns</p>
@@ -132,6 +162,10 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
               <tbody>{info.sample.slice(0, 3).map((r, i) => <tr key={i} className="row">{info.columns.map((c) => <td key={c} className="px-2 py-1">{r[c]}</td>)}</tr>)}</tbody></table></div>)}
         </div>)}
 
+      {info && kind === "holdings" && !mapping.trade_date && !canonical && (
+        <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/50 dark:bg-amber-900/20">
+          Your file has no buy-date column, so every holding will be dated <b>{defaultDate}</b>. Returns (XIRR) before that date can&apos;t be known, so set the date to roughly when you started investing.
+        </p>)}
       {info && kind === "holdings" && (
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block text-sm">Buy date for rows without one<input type="date" className="input mt-1 w-full" value={defaultDate} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setDefaultDate(e.target.value)} /></label>
