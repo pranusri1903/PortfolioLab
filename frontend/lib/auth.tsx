@@ -1,5 +1,5 @@
 "use client";
-import { ClerkProvider, useAuth, SignIn } from "@clerk/nextjs";
+import { ClerkProvider, useAuth, SignIn, SignUp } from "@clerk/nextjs";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 /** With a Clerk key, Clerk handles sign-in. Without one, a local dev sign-in is used
@@ -26,6 +26,10 @@ export const useSession = CLERK ? useClerkSession : useDevSession;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   return CLERK ? <ClerkProvider>{children}</ClerkProvider> : <>{children}</>;
+}
+
+export function SignUpForm() {
+  return CLERK ? <SignUp forceRedirectUrl="/dashboard" /> : <SignInForm />;
 }
 
 export function SignInForm() {
