@@ -14,7 +14,9 @@ Requires-Dist: psycopg[binary]>=3.2
 Requires-Dist: pyjwt[crypto]>=2.8
 Requires-Dist: python-multipart>=0.0.9
 Requires-Dist: openpyxl>=3.1
+Requires-Dist: xlrd>=2.0.1
 Provides-Extra: dev
+Requires-Dist: xlwt>=1.3; extra == "dev"
 Requires-Dist: pytest>=8; extra == "dev"
 Requires-Dist: ruff>=0.5; extra == "dev"
 Requires-Dist: mypy>=1.10; extra == "dev"

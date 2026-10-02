@@ -25,14 +25,17 @@ app/services/analytics.py
 app/services/csv_import.py
 app/services/demo.py
 app/services/holdings.py
+app/services/holdings_import.py
 app/services/ledger_io.py
 app/services/live_data.py
 app/services/market_data.py
 app/services/performance.py
 app/services/prices.py
 app/services/pricing.py
+app/services/resolve.py
 app/services/sip.py
 app/services/snapshots.py
+app/services/tables.py
 app/services/transactions.py
 app/services/validation.py
 portfoliolab_api.egg-info/PKG-INFO
@@ -43,5 +46,6 @@ portfoliolab_api.egg-info/top_level.txt
 tests/test_api.py
 tests/test_auth_migrations.py
 tests/test_features.py
+tests/test_imports.py
 tests/test_ledger.py
 tests/test_metrics.py

@@ -203,3 +203,33 @@ test("a statement with stacked tables imports from the right one", async ({ page
   await expect(page.getByRole("link", { name: "ACME" })).toBeVisible();
   await expect(page.getByRole("link", { name: "BOLT" })).toBeVisible();
 });
+
+test("the file is shown as a sheet; tables stacked with no gaps can be switched by clicking", async ({ page }) => {
+  await signIn(page, `e2e_sv_${Date.now()}`);
+  await page.getByRole("button", { name: "Start empty" }).click();
+  await page.getByRole("link", { name: "Import holdings" }).click();
+  const sheet = [
+    "Personal Details", "Name,Test User", "PAN,AAAAA0000A", "HOLDING SUMMARY",
+    "Total Investments,Current Portfolio Value,Profit/Loss,Profit/Loss %,XIRR", "9000,9500,500,5%,4%",
+    "HOLDINGS AS ON 2026-10-02",
+    "Symbol,Exchange,Category,Source,Qty,Invested Value,Current Value", "ACME,NYSE,Equity,Broker,10,500,520", "BOLT,NYSE,Equity,Broker,5,400,410",
+  ].join("\n");
+  await page.getByLabel("CSV or Excel file").setInputFiles({ name: "stmt.csv", mimeType: "text/csv", buffer: Buffer.from(sheet) });
+  await expect(page.getByText("Your file as we see it")).toBeVisible();
+  await expect(page.getByText("This file contains 2 tables")).toBeVisible();
+  const chip = page.locator("label", { hasText: "stmt.csv" });
+  await expect(chip).toContainText("2 rows"); // the holdings table was picked, not the summary
+  // personal details are visible as rows of the sheet but masked
+  await expect(page.getByRole("cell", { name: "Personal Details" })).toBeVisible();
+  await expect(page.getByText("Test User")).toHaveCount(0);
+  await expect(page.getByText("AAAAA0000A")).toHaveCount(0);
+  // click into the summary table to switch to it, then back
+  await page.getByRole("cell", { name: "9500", exact: true }).click();
+  await expect(chip).toContainText("1 rows");
+  await page.getByRole("cell", { name: "ACME", exact: true }).click();
+  await expect(chip).toContainText("2 rows");
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByRole("status")).toContainText("2 valid");
+  await page.getByRole("button", { name: /Confirm import of 2 rows/ }).click();
+  await expect(page.getByRole("status")).toContainText("Imported 2");
+});

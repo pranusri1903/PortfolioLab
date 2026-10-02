@@ -34,8 +34,10 @@ Next.js 16 · TypeScript · Tailwind · Recharts · SWR | FastAPI · Pydantic ·
 - **Getting data in** (sidebar → Import):
   - **Import holdings**: a file of what you own today. Each row becomes a purchase plus a same-day deposit of its cost, so money paid in is tracked. Optional opening cash. Re-importing the same file is safe (duplicates are skipped).
   - **Import transactions**: your full history from a broker or fund house (buys, sells, SIPs, redemptions, switches, dividends).
-  - Both accept **CSV and Excel (.xlsx)** (title rows above the header are skipped) and have separate **Stocks & ETFs / Mutual funds / Both** modes. A file that mixes the wrong kind of asset is rejected row by row with the reason.
-  - **Statements with several tables in one sheet** (personal details, a summary, then the holdings) are handled: every table is found across all sheets and the one whose headers look like holdings or transactions is picked. You can choose another table or name the header row yourself. Personal-details blocks are never read into the app. Totals rows are ignored.
+  - Both accept **CSV, TSV/semicolon text files, and Excel (`.xlsx`, old `.xls`)**, with separate **Stocks & ETFs / Mutual funds / Both** modes. A file that mixes the wrong kind of asset is rejected row by row with the reason. **PDF statements are not supported**: download the Excel/CSV version.
+  - **Any layout:** tables are found anywhere in a sheet, across all sheets, and split by blank rows, title lines, totals rows or a new header row (so no blank-row separators are needed). The import screen shows **your file as a spreadsheet** with each table outlined: click one to import it, or click a row number to say "the column names are here". Personal identifiers (PAN, phone, email, name/address rows) are masked in that view and never stored.
+  - **Smart column matching:** by header words and by what the values look like (dates, text vs numbers). Columns that describe today's value or performance (Current Value, Returns, XIRR) are never taken as the cost.
+  - **Dates in any common style** (ISO, `DD/MM/YYYY`, `24-Jan-25`, Excel date numbers, with a time of day). Ambiguous dates like `03/04/2025` read day-first in INR portfolios and month-first in USD ones.
   - **Column mapping** for any layout, with Indian date formats and `Rs 1,00,000` style amounts handled. Fund statements that list *Amount + NAV* get their units worked out.
   - Funds can be listed by **ticker, exact scheme name or AMFI code**; unknown live-priced assets are looked up and added when you confirm. Names are never guessed between several matches.
   - Tradebooks and fund statements usually have no deposits, so there is an **auto-fund** option (a deposit for each purchase).
@@ -113,13 +115,14 @@ CSV or `.xlsx`. Without a column mapping the header must be exactly `trade_date,
 ## Testing
 
 ```bash
-cd backend  && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/mypy app   # 69 tests
-cd frontend && npm test && npm run lint && npm run typecheck && npm run e2e         # 5 unit, 14 browser tests
+cd backend  && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/mypy app   # 75 tests
+cd frontend && npm test && npm run lint && npm run typecheck && npm run e2e         # 5 unit, 15 browser tests
 ```
 Backend tests run on in-memory SQLite and cover buys/sells/fees/dividends/cash flows, oversell and overdraw rejection, cross-user access, CSV preview edge cases, missing prices, insufficient history, zero denominators, Clerk JWT validation, and the Alembic migration. They have **not** been run against PostgreSQL in this repo's environment; CI uses SQLite as well.
 
 ## Known limitations
 
+- Statements that are PDFs, or tables whose column names span two rows, need converting or the "header row" option.
 - USD and INR only, one portfolio per currency, no cross-currency holdings or FX conversion. Mutual-fund IDCW/dividend payouts and fund-level expense details are not modelled. Live data depends on third-party providers and their plans.
 - Not deployed yet: no public demo, screenshots or video (Milestone 6 pending). Clerk integration is implemented but untested against a real Clerk instance (the JWT verifier is unit-tested with locally generated keys).
 - Route protection is client-side; the API enforces auth and ownership on every call, and pages hold no data of their own.

@@ -493,3 +493,160 @@ def test_fund_names_match_despite_wording_but_never_guess():
     assert (
         Resolver({}, Stub([direct, regular]), "INR").resolve("Alpha Gold Plan") is None
     )  # ambiguous: left unresolved
+
+
+# ---- "works for any file": odd layouts, formats, dates, column guessing ------------------------
+
+
+def sheet_rows(rows, width=12):
+    return [list(r) + [None] * (width - len(r)) for r in rows]
+
+
+def stacked_no_gaps():
+    """Tables stacked with no blank rows between them, 'gap' rows holding invisible characters, 12 columns wide."""
+    return xlsx(
+        sheet_rows(
+            [
+                ["Personal Details"],
+                ["Name", "Test User"],
+                ["PAN", "AAAAA0000A"],
+                [" "],
+                ["HOLDING SUMMARY"],
+                ["Total Investments", "Current Portfolio Value", "Profit/Loss", "Profit/Loss %", "XIRR"],
+                [76496.2, 75291.72, -1204.49, "-1.57%", "-4.98%"],
+                ["​"],
+                [" "],
+                ["HOLDINGS AS ON 2026-10-02"],
+                [
+                    "Scheme Name",
+                    "AMC",
+                    "Category",
+                    "Sub-category",
+                    "Folio No.",
+                    "Source",
+                    "Units",
+                    "Invested Value",
+                    "Current Value",
+                    "Returns",
+                    "XIRR",
+                ],
+                [
+                    "SBI Gold Direct Plan Growth",
+                    "SBI Mutual Fund",
+                    "Commodities",
+                    "Gold",
+                    "111",
+                    "Groww",
+                    970.019,
+                    43497.83,
+                    43521.07,
+                    23.2,
+                    "0.18%",
+                ],
+                [
+                    "HDFC Infrastructure Fund Direct Growth",
+                    "HDFC Mutual Fund",
+                    "Equity",
+                    "Sectoral",
+                    "222",
+                    "Groww",
+                    634.17,
+                    32998.37,
+                    31770.65,
+                    -1227.7,
+                    "-11.8%",
+                ],
+            ]
+        )
+    )
+
+
+def test_tables_are_found_without_blank_separators_and_padding_columns_are_dropped(client):
+    r = client.post(
+        "/api/v1/import/inspect", headers=H, files={"file": ("g.xlsx", io.BytesIO(stacked_no_gaps()))}
+    ).json()
+    summary, holdings = r["tables"]
+    assert summary["columns"] == [
+        "Total Investments",
+        "Current Portfolio Value",
+        "Profit/Loss",
+        "Profit/Loss %",
+        "XIRR",
+    ]
+    assert summary["row_count"] == 1 and holdings["row_count"] == 2 and holdings["header_row"] == 11
+    assert r["selected"] == 1 and r["columns"][0] == "Scheme Name"
+    s = r["suggested"]["holdings"]
+    assert s["symbol"] == "Scheme Name" and s["quantity"] == "Units" and s["cash_amount"] == "Invested Value"
+    assert s["price"] == "" and "Current Value" not in s.values()  # never mistake today's value for cost
+    grid = r["sheets"][0]["rows"]
+    assert grid[1] == ["Name", "••••"] and grid[2] == ["PAN", "••••"]  # personal details are masked on screen
+
+
+def test_import_works_on_the_gapless_layout(client, funds):
+    app.dependency_overrides[get_provider] = lambda: GrowwProvider()
+    pid = new_portfolio(client, "INR")
+    r = upload(
+        client,
+        pid,
+        stacked_no_gaps(),
+        "g.xlsx",
+        path="holdings/import",
+        asset_class="fund",
+        default_date="2025-06-01",
+    ).json()
+    assert [x["status"] for x in r["rows"]] == ["valid", "valid"]
+
+
+def test_old_xls_semicolon_tab_and_windows_encoded_files(client):
+    import xlwt
+
+    wb = xlwt.Workbook()
+    ws = wb.add_sheet("Holdings")
+    for i, row in enumerate(
+        [["Summary", "x", "y"], [1, 2, 3], [], ["symbol", "quantity", "average_price"], ["ACME", 10, 50]]
+    ):
+        for j, v in enumerate(row):
+            ws.write(i, j, v)
+    buf = io.BytesIO()
+    wb.save(buf)
+    pid = new_portfolio(client)
+    kw = dict(path="holdings/import", default_date="2025-06-01")
+    assert upload(client, pid, buf.getvalue(), "old.xls", **kw).json()["rows"][0]["resolved_symbol"] == "ACME"
+    for name, content in [
+        ("semi.csv", b"symbol;quantity;average_price\nACME;10;50\n"),
+        ("tabs.tsv", b"symbol\tquantity\taverage_price\nACME\t10\t50\n"),
+        ("win.csv", "symbol,quantity,average_price,note\nACME,10,50,café\n".encode("cp1252")),
+    ]:
+        assert upload(client, pid, content, name, **kw).json()["valid"] == 1, name
+
+
+def test_pdf_and_junk_get_helpful_errors(client):
+    pid = new_portfolio(client)
+    r = upload(client, pid, b"%PDF-1.7 ...", "cas.pdf", path="holdings/import", default_date="2025-06-01")
+    assert r.status_code == 422 and "Excel or CSV version" in r.json()["error"]["message"]
+
+
+def test_dates_in_any_common_style():
+    from datetime import date as d
+
+    from app.services.mapping import parse_date
+
+    assert parse_date("2025-01-24") == d(2025, 1, 24)
+    assert parse_date("45681") == d(2025, 1, 24)  # Excel serial number
+    assert parse_date("24 Jan 2025") == d(2025, 1, 24) and parse_date("24-Jan-25") == d(2025, 1, 24)
+    assert parse_date("03/04/2025") == d(2025, 4, 3)  # day-first by default
+    assert parse_date("03/04/2025", day_first=False) == d(2025, 3, 4)
+    assert parse_date("25/12/2025", day_first=False) == d(
+        2025, 12, 25
+    )  # unambiguous, so format is worked out
+    assert parse_date("2025-01-24 10:30:00") == d(2025, 1, 24)
+    assert parse_date("not a date") is None
+
+
+def test_columns_guessed_from_contents_when_headers_say_nothing(client):
+    csv = "a,b,c,d\nGrowth Fund A,2024-03-05,10,500\nGrowth Fund B,2024-04-09,5,300\n"
+    r = client.post(
+        "/api/v1/import/inspect", headers=H, files={"file": ("x.csv", io.BytesIO(csv.encode()))}
+    ).json()
+    s = r["suggested"]["holdings"]
+    assert s["symbol"] == "a" and s["trade_date"] == "b" and r["date_format"] == "%Y-%m-%d"

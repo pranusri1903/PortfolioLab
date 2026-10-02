@@ -33,7 +33,7 @@ from app.schemas.portfolio import (
 from app.services import analytics as analytics_service
 from app.services import csv_import, holdings, holdings_import, performance, sip, transactions
 from app.services.demo import load_demo_transactions, seed_market_data
-from app.services.tables import Source, read_tables
+from app.services.tables import Source, inspect
 
 router = APIRouter(prefix="/api/v1")
 Db = Annotated[Session, Depends(get_session)]
@@ -231,33 +231,7 @@ async def inspect_file(
 ):
     """What is in an uploaded CSV/Excel file: every table found, and the columns and sample rows of the
     chosen one (default: the table whose headers look most like holdings or transactions)."""
-    name, content = file.filename or "upload.csv", await file.read()
-    tables = read_tables(name, content)
-    chosen = Source(name, content, table_index, header_row).table()
-    best = max(range(len(tables)), key=lambda i: tables[i].score)
-    selected = (
-        table_index
-        if table_index is not None and header_row is None
-        else (best if header_row is None else None)
-    )
-    return {
-        "tables": [
-            {
-                "index": i,
-                "sheet": t.sheet,
-                "title": t.title,
-                "header_row": t.header_row,
-                "columns": t.columns,
-                "row_count": len(t.rows),
-            }
-            for i, t in enumerate(tables)
-        ],
-        "selected": selected,
-        "columns": chosen.columns,
-        "sample": chosen.rows[:5],
-        "row_count": len(chosen.rows),
-        "header_row": chosen.header_row,
-    }
+    return inspect(file.filename or "upload.csv", await file.read(), table_index, header_row)
 
 
 def _mapping(raw: str | None) -> dict | None:

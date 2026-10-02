@@ -13,63 +13,30 @@ from app.errors import ApiError
 from app.models import Portfolio
 from app.schemas.portfolio import ImportResponse
 from app.services import csv_import as ci
-from app.services.tables import Source
+from app.services.mapping import suggest
+from app.services.tables import Source, Table
 
 FIELDS = ["symbol", "quantity", "price", "cash_amount", "trade_date"]
-# Column names recognised without a mapping (case-insensitive)
-ALIASES = {
-    "symbol": [
-        "symbol",
-        "ticker",
-        "scheme",
-        "scheme name",
-        "fund",
-        "fund name",
-        "instrument",
-        "name",
-        "scheme code",
-    ],
-    "quantity": ["quantity", "qty", "units", "shares"],
-    "price": [
-        "average_price",
-        "avg_price",
-        "average price",
-        "avg price",
-        "avg cost",
-        "price",
-        "nav",
-        "buy price",
-    ],
-    "cash_amount": [
-        "invested",
-        "invested amount",
-        "invested value",
-        "amount",
-        "cost",
-        "cost value",
-        "total cost",
-    ],
-    "trade_date": ["date", "buy date", "trade_date", "purchase date", "purchase_date"],
-}
 
 
-def detect(columns: list[str]) -> dict[str, str]:
-    lower = {c.lower().strip(): c for c in columns}
-    found = {f: next((lower[a] for a in ALIASES[f] if a in lower), "") for f in FIELDS}
-    if not found["symbol"] or not found["quantity"]:
+def detect(table: Table) -> dict[str, str]:
+    found = suggest(table)["holdings"]
+    if not found.get("symbol") or not found.get("quantity"):
         raise ApiError(
             422,
             "invalid_csv_header",
             "Couldn't find the holding and quantity columns. Map them, "
             "or use: symbol, quantity, average_price, date.",
-            {"received": columns},
+            {"received": table.columns},
         )
     return found
 
 
-def to_records(src: Source, mapping: dict | None, date_format: str, default_date: date):
+def to_records(
+    src: Source, mapping: dict | None, date_format: str, default_date: date, day_first: bool = True
+):
     table = src.table()
-    cols = mapping or detect(table.columns)
+    cols = mapping or detect(table)
     records = []
     for rec in table.rows:
 
@@ -81,7 +48,7 @@ def to_records(src: Source, mapping: dict | None, date_format: str, default_date
         )
         records.append(
             {
-                "trade_date": ci.to_iso(get("trade_date"), date_format)
+                "trade_date": ci.to_iso(get("trade_date"), date_format, day_first)
                 if get("trade_date")
                 else default_date.isoformat(),
                 "type": "BUY",
@@ -115,7 +82,7 @@ def run(
     rows = ci.analyze_records(
         s,
         portfolio,
-        to_records(src, mapping, date_format, default_date),
+        to_records(src, mapping, date_format, default_date, portfolio.base_currency == "INR"),
         scope,
         provider,
         auto_fund=True,

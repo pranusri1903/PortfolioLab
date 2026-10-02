@@ -29,6 +29,13 @@ for (const theme of ["light", "dark"]) {
       await page.getByLabel("CSV or Excel file").setInputFiles({ name: "statement.csv", mimeType: "text/csv", buffer: Buffer.from(stmt) });
       await page.getByText("Match your file's columns").waitFor();
       await page.screenshot({ path: "../docs/screenshots/import.png" });
+      await page.getByRole("link", { name: "Import holdings" }).click();
+      await page.getByRole("heading", { name: "Import holdings" }).waitFor();
+      const stacked = ["Personal Details", "Name,Test User", "PAN,AAAAA0000A", "", "HOLDING SUMMARY", "Total Investments,Current Portfolio Value,Profit/Loss,Profit/Loss %,XIRR", "76496.2,75291.72,-1204.49,-1.57%,-4.98%", "", "HOLDINGS AS ON 2026-10-02", "Scheme Name,AMC,Category,Sub-category,Folio No.,Source,Units,Invested Value,Current Value,Returns,XIRR", "SBI Gold Direct Plan Growth,SBI Mutual Fund,Commodities,Gold,111,Groww,970.019,43497.83,43521.07,23.24,0.18%", "HDFC Infrastructure Fund Direct Growth,HDFC Mutual Fund,Equity,Sectoral,222,Groww,634.17,32998.37,31770.65,-1227.72,-11.8%"].join("\n");
+      await page.getByRole("button", { name: "Mutual funds" }).click();
+      await page.getByLabel("CSV or Excel file").setInputFiles({ name: "Holdings_Statement.csv", mimeType: "text/csv", buffer: Buffer.from(stacked) });
+      await page.getByText("Your file as we see it").waitFor();
+      await page.screenshot({ path: "../docs/screenshots/import-stacked.png", fullPage: true });
       await page.getByRole("link", { name: "Holdings", exact: true }).click();
       await page.getByRole("link", { name: "ACME" }).waitFor();
       await page.screenshot({ path: "../docs/screenshots/holdings.png" });

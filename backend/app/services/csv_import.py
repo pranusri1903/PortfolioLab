@@ -12,7 +12,7 @@ trade_date,type,symbol,quantity,price,fee,cash_amount,notes
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from decimal import ROUND_CEILING, Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from app.repositories import data as repo
 from app.schemas.portfolio import ImportCounts, ImportResponse, ImportRow
 from app.services import prices
 from app.services.ledger_io import to_txns
+from app.services.mapping import parse_date
 from app.services.resolve import Resolved, Resolver
 from app.services.snapshots import rebuild_snapshots
 from app.services.tables import ROW_ERROR, Source, Table
@@ -73,13 +74,9 @@ def clean_num(v: str) -> str:
     return re.sub(r"[^\d.]", "", v)  # drops currency symbols, commas and signs
 
 
-def to_iso(raw: str, fmt: str) -> str:
-    for f in (fmt, "%Y-%m-%d"):  # Excel date cells arrive as ISO already
-        try:
-            return datetime.strptime(raw, f).date().isoformat()
-        except ValueError:
-            continue
-    return raw  # left as-is so the row is rejected with a clear reason
+def to_iso(raw: str, fmt: str, day_first: bool = True) -> str:
+    d = parse_date(raw, fmt, day_first)
+    return d.isoformat() if d else raw  # left as-is so the row is rejected with a clear reason
 
 
 def dec(name: str, raw: str | None, errors: list[str]) -> Decimal | None:
@@ -108,7 +105,9 @@ def derive_qty_price(qty: str, price: str, amount: str) -> tuple[str, str]:
     return qty, price
 
 
-def normalize(rec: dict[str, str], mapping: dict[str, str], date_format: str) -> dict[str, str]:
+def normalize(
+    rec: dict[str, str], mapping: dict[str, str], date_format: str, day_first: bool = True
+) -> dict[str, str]:
     def get(f: str) -> str:
         return rec.get(mapping.get(f) or "", "").strip()
 
@@ -126,7 +125,7 @@ def normalize(rec: dict[str, str], mapping: dict[str, str], date_format: str) ->
         zip(
             EXPECTED_HEADER,
             [
-                to_iso(get("trade_date"), date_format),
+                to_iso(get("trade_date"), date_format, day_first),
                 kind,
                 get("symbol"),
                 qty,
@@ -161,9 +160,11 @@ class Parsed:
     resolved: Resolved | None = None
 
 
-def canonical_records(table: Table, mapping: dict | None, date_format: str) -> list[dict[str, str]]:
+def canonical_records(
+    table: Table, mapping: dict | None, date_format: str, day_first: bool = True
+) -> list[dict[str, str]]:
     if mapping:
-        return [normalize(r, mapping, date_format) for r in table.rows]
+        return [normalize(r, mapping, date_format, day_first) for r in table.rows]
     if table.columns != EXPECTED_HEADER:
         raise ApiError(
             422,
@@ -320,7 +321,7 @@ def analyze(
     provider=None,
     auto_fund: bool = False,
 ) -> list[Parsed]:
-    records = canonical_records(src.table(), mapping, date_format)
+    records = canonical_records(src.table(), mapping, date_format, portfolio.base_currency == "INR")
     return analyze_records(s, portfolio, records, scope, provider, auto_fund)
 
 

@@ -3,6 +3,7 @@ import { CheckCircle2, Download, FileSpreadsheet } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
+import { SheetView } from "@/components/sheet-view";
 import { ErrorBox, Seg } from "@/components/ui";
 import { base, useApi } from "@/lib/api";
 import { symbolOf } from "@/lib/format";
@@ -63,6 +64,9 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
   const canonical = kind === "transactions" && info?.columns.join(",") === CANONICAL;
   const needsFunding = !autoFund && kind === "transactions" && !!res && !res.committed && res.rows.some((r) => r.reasons.some((x) => x.includes("negative")));
 
+  const initialMapping = (i: Inspect, forClass: Cls) =>
+    Object.fromEntries(fieldsFor(kind, forClass).map(([k]) => [k, i.suggested?.[kind]?.[k] ?? guess(k, i.columns)]));
+
   async function inspect(f: File, index: number | null, header: string, forClass: Cls = cls) {
     setRes(undefined); setError(undefined);
     const body = new FormData();
@@ -73,7 +77,8 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
       const i: Inspect = await api("/api/v1/import/inspect", { method: "POST", body });
       setInfo(i);
       setTableIndex(header ? null : i.selected);
-      setMapping(Object.fromEntries(fieldsFor(kind, forClass).map(([k]) => [k, guess(k, i.columns)])));
+      setMapping(initialMapping(i, forClass));
+      if (i.date_format) setDateFormat(i.date_format);
     } catch (e) { setError(e as Error); }
   }
 
@@ -107,7 +112,7 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
   return (
     <section className="card space-y-4" aria-label={`Import ${kind}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Seg label="Asset class" opts={CLASSES} value={cls} set={(v) => { setCls(v as Cls); setRes(undefined); if (info) setMapping(Object.fromEntries(fieldsFor(kind, v as Cls).map(([k]) => [k, guess(k, info.columns)]))); }} />
+        <Seg label="Asset class" opts={CLASSES} value={cls} set={(v) => { setCls(v as Cls); setRes(undefined); if (info) setMapping(initialMapping(info, v as Cls)); }} />
         <button className="btn" onClick={download}><Download size={15} />Download CSV template</button>
       </div>
       <p className="text-sm text-slate-500">
@@ -123,6 +128,13 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
         <span className="btn">Browse</span>
       </label>
 
+      {info && (
+        <details open={info.tables.length > 1} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+          <summary className="cursor-pointer text-sm font-medium">Your file as we see it <span className="font-normal text-slate-500">· {info.tables.length} table{info.tables.length === 1 ? "" : "s"} found</span></summary>
+          <div className="mt-3">
+            <SheetView info={info} onPickTable={(i) => { setHeaderRow(""); inspect(file!, i, ""); }} onPickHeader={(r) => { setHeaderRow(String(r)); inspect(file!, null, String(r)); }} />
+          </div>
+        </details>)}
       {info && (info.tables.length > 1 || headerRow) && (
         <div className="rounded-xl bg-indigo-50 p-3 text-sm dark:bg-indigo-500/10">
           <p className="mb-2"><b>This file contains {info.tables.length} tables.</b> We picked the one that looks like your {kind}; change it if that&apos;s wrong.</p>
