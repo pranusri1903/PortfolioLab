@@ -1,8 +1,8 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 import { usePid } from "../layout";
-import { CsvImport } from "@/components/csv-import";
 import { TxForm } from "@/components/tx-form";
 import { Empty, ErrorBox, Loading } from "@/components/ui";
 import { base, useApi, useData } from "@/lib/api";
@@ -17,7 +17,7 @@ export default function Transactions() {
   const { mutate } = useSWRConfig();
   const [f, setF] = useState({ symbol: "", type: "", asset_type: "", source: "", date_from: "", date_to: "" });
   const [page, setPage] = useState(1);
-  const [mode, setMode] = useState<"add" | "import" | Tx | null>(null);
+  const [mode, setMode] = useState<"add" | Tx | null>(null);
   const [error, setError] = useState<Error>();
   const qs = new URLSearchParams({ ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)), page: String(page), page_size: "15" });
   const { data, error: loadError } = useData<TxPage>(`${base(pid)}/transactions?${qs}`);
@@ -40,12 +40,11 @@ export default function Transactions() {
         <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
         <div className="flex gap-2">
           <button className="btn-primary" onClick={() => setMode("add")}>Add transaction</button>
-          <button className="btn" onClick={() => setMode("import")}>Import CSV</button>
+          <Link href="/import/transactions" className="btn">Import file</Link>
           <button className="btn" onClick={exportCsv}>Export CSV</button>
         </div>
       </div>
       {mode === "add" && <TxForm pid={pid} defaultDate={asOf} onDone={() => setMode(null)} />}
-      {mode === "import" && <CsvImport pid={pid} onClose={() => setMode(null)} />}
       {mode && typeof mode === "object" && <TxForm key={mode.id} pid={pid} tx={mode} defaultDate={asOf} onDone={() => setMode(null)} />}
       <div className="card flex flex-wrap items-end gap-2 p-3" role="search" aria-label="Filter transactions">
         <input aria-label="Symbol" placeholder="Symbol (exact)" className="input w-36" value={f.symbol} onChange={set("symbol")} />

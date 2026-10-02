@@ -1,5 +1,5 @@
 "use client";
-import { Activity, BarChart3, BookOpen, Briefcase, LayoutDashboard, LogOut, Moon, Plus, Receipt, Repeat, Settings, Sun } from "lucide-react";
+import { Activity, BarChart3, BookOpen, Briefcase, FileSpreadsheet, LayoutDashboard, ListPlus, LogOut, Moon, Plus, Receipt, Repeat, Settings, Sun } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
@@ -16,8 +16,10 @@ export const usePortfolio = () => useContext(Ctx)!.portfolio;
 
 const LINKS = [
   ["Dashboard", "/dashboard", LayoutDashboard], ["Holdings", "/holdings", Briefcase], ["Analytics", "/analytics", Activity],
-  ["SIPs", "/sips", Repeat], ["Transactions", "/transactions", Receipt], ["Methodology", "/methodology", BookOpen], ["Settings", "/settings", Settings],
+  ["SIPs", "/sips", Repeat], ["Transactions", "/transactions", Receipt],
 ] as const;
+const IMPORTS = [["Import holdings", "/import/holdings", ListPlus], ["Import transactions", "/import/transactions", FileSpreadsheet]] as const;
+const MORE = [["Methodology", "/methodology", BookOpen], ["Settings", "/settings", Settings]] as const;
 
 function Onboarding({ existing, onDone }: { existing: Portfolio[]; onDone: (id: string) => void }) {
   const api = useApi();
@@ -123,14 +125,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <button className="btn w-full justify-center text-xs" onClick={() => setCreating(true)}><Plus size={14} />Add portfolio</button>
           </div>)}
         <nav aria-label="Main" className="flex gap-1 overflow-x-auto md:flex-col">
-          {LINKS.map(([label, href, Icon]) => {
-            const active = path.startsWith(href);
-            return (
-              <Link key={href} href={href} aria-current={active ? "page" : undefined} onClick={() => setCreating(false)}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition ${active ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300" : "text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
-                <Icon size={17} aria-hidden />{label}
-              </Link>);
-          })}
+          {[LINKS, IMPORTS, MORE].map((group, gi) => (
+            <div key={gi} className="flex gap-1 md:flex-col">
+              {gi === 1 && <p className="hidden px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wider text-slate-400 md:block">Import</p>}
+              {group.map(([label, href, Icon]) => {
+                const active = path.startsWith(href);
+                return (
+                  <Link key={href} href={href} aria-current={active ? "page" : undefined} onClick={() => setCreating(false)}
+                    className={`flex items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${active ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300" : "text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
+                    <Icon size={17} aria-hidden />{label}
+                  </Link>);
+              })}
+            </div>))}
         </nav>
         <div className="mt-auto hidden space-y-2 md:block">
           <ThemeToggle />

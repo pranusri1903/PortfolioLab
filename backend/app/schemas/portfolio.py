@@ -108,6 +108,9 @@ class ImportRow(BaseModel):
     status: Literal["valid", "invalid", "duplicate"]
     reasons: list[str] = []
     data: dict[str, str | None]
+    resolved_symbol: str | None = None
+    resolved_name: str | None = None
+    will_add_asset: bool = False  # live-priced asset not in our database yet; added when you confirm
 
 
 class ImportCounts(BaseModel):

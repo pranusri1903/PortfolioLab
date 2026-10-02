@@ -31,7 +31,14 @@ Next.js 16 · TypeScript · Tailwind · Recharts · SWR | FastAPI · Pydantic ·
 - **SIPs:** monthly recurring investments into any asset. Installments are back-filled from historical prices and recorded as deposit + buy pairs, so returns exclude money paid in.
 - **Complete analytics** (`/analytics`): per-holding invested, value, unrealized/realized P/L, dividends, XIRR, 1-year volatility, drawdown, distance from 52-week high; portfolio XIRR, concentration/diversification, correlation matrix, risk-vs-return, drawdown curve; sold positions included.
 - **Dashboard:** hero value + sparkline, 8 date ranges (1M–All, YTD), benchmark comparison, risk metrics, monthly-returns heatmap, income & costs, allocation donuts, best/worst positions.
-- **Getting data in:** quick-start wizard ("what I own"), CSV import with column mapping for broker exports (Indian date formats, ₹/commas handled), manual entry, CSV export.
+- **Getting data in** (sidebar → Import):
+  - **Import holdings**: a file of what you own today. Each row becomes a purchase plus a same-day deposit of its cost, so money paid in is tracked. Optional opening cash. Re-importing the same file is safe (duplicates are skipped).
+  - **Import transactions**: your full history from a broker or fund house (buys, sells, SIPs, redemptions, switches, dividends).
+  - Both accept **CSV and Excel (.xlsx)** (title rows above the header are skipped) and have separate **Stocks & ETFs / Mutual funds / Both** modes. A file that mixes the wrong kind of asset is rejected row by row with the reason.
+  - **Column mapping** for any layout, with Indian date formats and `Rs 1,00,000` style amounts handled. Fund statements that list *Amount + NAV* get their units worked out.
+  - Funds can be listed by **ticker, exact scheme name or AMFI code**; unknown live-priced assets are looked up and added when you confirm. Names are never guessed between several matches.
+  - Tradebooks and fund statements usually have no deposits, so there is an **auto-fund** option (a deposit for each purchase).
+  - Also: quick-start wizard, manual entry, CSV export.
 - **Filters:** holdings by class and profit/loss; analytics by class and open/closed; transactions by symbol, type, asset class, source (SIP/manual) and dates.
 - Pastel chart palette, light/dark theme, accessible chart data tables.
 
@@ -98,15 +105,15 @@ Interactive docs at `http://localhost:8000/docs`. All routes are under `/api/v1`
 - **Time zones:** trade dates are stored in UTC; date-only input means 00:00 UTC, and the calendar date is the UTC date.
 - **Money:** `Numeric` columns and Python `Decimal` throughout; JSON carries decimals as strings. Ratios (returns, Sharpe) are floats.
 
-## CSV format
+## Import format
 
-Header must be exactly `trade_date,type,symbol,quantity,price,fee,cash_amount,notes`. The importer validates every row (dates, amounts, symbols, field combinations, ledger rules, duplicates by SHA-256 fingerprint of date/type/symbol/qty/price/fee/amount), shows a preview, and on confirmation writes all valid rows in **one database transaction**, reporting imported / skipped (duplicate) / rejected (invalid) counts with row numbers and reasons. Max 1 MB / 1000 rows.
+CSV or `.xlsx`. Without a column mapping the header must be exactly `trade_date,type,symbol,quantity,price,fee,cash_amount,notes`. The importer validates every row (dates, amounts, symbols, field combinations, ledger rules, duplicates by SHA-256 fingerprint of date/type/symbol/qty/price/fee/amount), shows a preview, and on confirmation writes all valid rows in **one database transaction**, reporting imported / skipped (duplicate) / rejected (invalid) counts with row numbers and reasons. Max 1 MB / 1000 rows.
 
 ## Testing
 
 ```bash
-cd backend  && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/mypy app   # 50 tests
-cd frontend && npm test && npm run lint && npm run typecheck && npm run e2e         # 4 unit, 4 browser tests
+cd backend  && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/mypy app   # 63 tests
+cd frontend && npm test && npm run lint && npm run typecheck && npm run e2e         # 5 unit, 13 browser tests
 ```
 Backend tests run on in-memory SQLite and cover buys/sells/fees/dividends/cash flows, oversell and overdraw rejection, cross-user access, CSV preview edge cases, missing prices, insufficient history, zero denominators, Clerk JWT validation, and the Alembic migration. They have **not** been run against PostgreSQL in this repo's environment; CI uses SQLite as well.
 

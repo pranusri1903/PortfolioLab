@@ -7,10 +7,12 @@ app/errors.py
 app/main.py
 app/seed.py
 app/api/__init__.py
+app/api/market.py
 app/api/routes.py
 app/calculations/__init__.py
 app/calculations/ledger.py
 app/calculations/metrics.py
+app/calculations/xirr.py
 app/models/__init__.py
 app/models/models.py
 app/repositories/__init__.py
@@ -19,6 +21,7 @@ app/schemas/__init__.py
 app/schemas/analytics.py
 app/schemas/portfolio.py
 app/services/__init__.py
+app/services/analytics.py
 app/services/csv_import.py
 app/services/demo.py
 app/services/holdings.py
@@ -26,7 +29,9 @@ app/services/ledger_io.py
 app/services/live_data.py
 app/services/market_data.py
 app/services/performance.py
+app/services/prices.py
 app/services/pricing.py
+app/services/sip.py
 app/services/snapshots.py
 app/services/transactions.py
 app/services/validation.py
@@ -37,5 +42,6 @@ portfoliolab_api.egg-info/requires.txt
 portfoliolab_api.egg-info/top_level.txt
 tests/test_api.py
 tests/test_auth_migrations.py
+tests/test_features.py
 tests/test_ledger.py
 tests/test_metrics.py

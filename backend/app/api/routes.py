@@ -3,11 +3,13 @@ import io
 import json
 import uuid
 from datetime import date
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
+from app.api.market import Provider
 from app.auth import current_user_id
 from app.db import get_session
 from app.errors import ApiError
@@ -29,8 +31,9 @@ from app.schemas.portfolio import (
     TxType,
 )
 from app.services import analytics as analytics_service
-from app.services import csv_import, holdings, performance, sip, transactions
+from app.services import csv_import, holdings, holdings_import, performance, sip, transactions
 from app.services.demo import load_demo_transactions, seed_market_data
+from app.services.tables import read_table
 
 router = APIRouter(prefix="/api/v1")
 Db = Annotated[Session, Depends(get_session)]
@@ -165,17 +168,77 @@ def create_transaction(body: TransactionIn, p: Owned, db: Db):
 async def import_transactions(
     p: Owned,
     db: Db,
+    provider: Provider,
     file: UploadFile = File(...),
     commit: bool = False,
     mapping: str | None = Form(None),
     date_format: str = Form("%Y-%m-%d"),
+    asset_class: str = Form("all", pattern="^(all|stock|fund)$"),
+    auto_fund: bool = Form(False),
 ):
+    """CSV or Excel. asset_class limits the file to stocks & ETFs ("stock") or mutual funds ("fund")."""
+    run = csv_import.commit if commit else csv_import.preview
+    return run(
+        db,
+        p,
+        file.filename or "upload.csv",
+        await file.read(),
+        _mapping(mapping),
+        date_format,
+        _scope(asset_class),
+        provider,
+        auto_fund,
+    )
+
+
+@router.post("/portfolios/{portfolio_id}/holdings/import", response_model=ImportResponse)
+async def import_holdings(
+    p: Owned,
+    db: Db,
+    provider: Provider,
+    file: UploadFile = File(...),
+    commit: bool = False,
+    mapping: str | None = Form(None),
+    date_format: str = Form("%Y-%m-%d"),
+    asset_class: str = Form("all", pattern="^(all|stock|fund)$"),
+    default_date: date = Form(...),
+    cash: Decimal = Form(Decimal("0")),
+):
+    """A holdings file (what I own today). Each row becomes a BUY plus a same-day DEPOSIT of its cost."""
+    return holdings_import.run(
+        db,
+        p,
+        file.filename or "upload.csv",
+        await file.read(),
+        commit=commit,
+        mapping=_mapping(mapping),
+        date_format=date_format,
+        scope=_scope(asset_class),
+        provider=provider,
+        default_date=default_date,
+        cash=cash,
+    )
+
+
+@router.post("/import/inspect")
+async def inspect_file(_: User, file: UploadFile = File(...)):
+    """Column names and a few sample rows from a CSV/Excel upload, to build the column-mapping screen."""
+    t = read_table(file.filename or "upload.csv", await file.read())
+    return {"columns": t.columns, "sample": t.rows[:5], "row_count": len(t.rows)}
+
+
+def _mapping(raw: str | None) -> dict | None:
     try:
-        cols = json.loads(mapping) if mapping else None
+        cols = json.loads(raw) if raw else None
     except ValueError:
         raise ApiError(422, "invalid_mapping", "mapping must be a JSON object.") from None
-    content = await file.read()
-    return (csv_import.commit if commit else csv_import.preview)(db, p, content, cols, date_format)
+    if cols is not None and not isinstance(cols, dict):
+        raise ApiError(422, "invalid_mapping", "mapping must be a JSON object.")
+    return cols
+
+
+def _scope(asset_class: str) -> str | None:
+    return None if asset_class == "all" else asset_class
 
 
 @router.post("/portfolios/{portfolio_id}/quick-start", status_code=201)

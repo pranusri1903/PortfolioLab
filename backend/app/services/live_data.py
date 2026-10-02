@@ -101,6 +101,16 @@ class MfApiProvider:
             if "IDCW" not in r["schemeName"] and "dividend" not in r["schemeName"].lower()
         ][:15]
 
+    def lookup(self, code: str) -> SymbolHit | None:
+        """Resolve an AMFI scheme code to a fund (statements often list codes, not names)."""
+        try:
+            name = (self._get(f"/{code}").get("meta") or {}).get("scheme_name")
+        except ProviderError:
+            return None
+        if not name or "IDCW" in name or "dividend" in name.lower():
+            return None
+        return SymbolHit(f"MF-{code}", name, "MUTUAL_FUND", "INR", "AMFI")
+
     def daily_closes(self, asset: Asset, start: date, end: date) -> Iterator[tuple[date, Decimal]]:
         for row in reversed(self._get(f"/{asset.symbol.removeprefix('MF-')}").get("data", [])):
             d = datetime.strptime(row["date"], "%d-%m-%Y").date()

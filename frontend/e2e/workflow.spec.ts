@@ -29,7 +29,7 @@ test("sign in, review demo, add a transaction, see the portfolio update", async 
   const cash = page.locator(".card", { hasText: "Cash balance" }).first().locator(".text-2xl");
   const before = await cash.innerText();
 
-  await page.getByRole("link", { name: "Transactions" }).click();
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await page.getByRole("button", { name: "Add transaction" }).click();
   const form = page.getByRole("form", { name: "Add transaction" });
   await form.getByLabel("Type").selectOption("DEPOSIT");
@@ -37,14 +37,14 @@ test("sign in, review demo, add a transaction, see the portfolio update", async 
   await form.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("cell", { name: "$1,234.56" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Dashboard" }).click();
+  await page.getByRole("link", { name: "Dashboard", exact: true }).click();
   await expect(cash).not.toHaveText(before);
 });
 
 test("holdings are searchable and link to detail with sample label", async ({ page }) => {
   await signIn(page, `e2e_h_${Date.now()}`);
   await loadDemo(page);
-  await page.getByRole("link", { name: "Holdings" }).click();
+  await page.getByRole("link", { name: "Holdings", exact: true }).click();
   await page.getByLabel("Search holdings").fill("acme");
   await expect(page.getByRole("link", { name: "ACME" })).toBeVisible();
   await expect(page.getByRole("link", { name: "BNCH" })).toHaveCount(0);
@@ -52,13 +52,12 @@ test("holdings are searchable and link to detail with sample label", async ({ pa
   await expect(page.getByText("(sample prices)")).toBeVisible();
 });
 
-test("CSV import previews errors, then imports valid rows", async ({ page }) => {
+test("transaction import previews errors, then imports valid rows", async ({ page }) => {
   await signIn(page, `e2e_c_${Date.now()}`);
   await page.getByRole("button", { name: "Start empty" }).click();
-  await page.getByRole("link", { name: "Transactions" }).click();
-  await page.getByRole("button", { name: "Import CSV" }).click();
+  await page.getByRole("link", { name: "Import transactions" }).click();
   const csv = "trade_date,type,symbol,quantity,price,fee,cash_amount,notes\n2025-01-10,DEPOSIT,,,,,500.00,ok\n2025-99-10,DEPOSIT,,,,,5.00,bad date\n";
-  await page.getByLabel("CSV file").setInputFiles({ name: "t.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.getByLabel("CSV or Excel file").setInputFiles({ name: "t.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
   await page.getByRole("button", { name: "Preview" }).click();
   await expect(page.getByRole("status")).toContainText("1 valid");
   await expect(page.getByText("not a real calendar date")).toBeVisible();
@@ -66,12 +65,54 @@ test("CSV import previews errors, then imports valid rows", async ({ page }) => 
   await expect(page.getByRole("status")).toContainText("Imported 1");
 });
 
+test("a trades-only file prompts to fund purchases automatically", async ({ page }) => {
+  await signIn(page, `e2e_f_${Date.now()}`);
+  await page.getByRole("button", { name: "Start empty" }).click();
+  await page.getByRole("link", { name: "Import transactions" }).click();
+  const csv = "trade_date,type,symbol,quantity,price,fee,cash_amount,notes\n2025-01-13,BUY,ACME,10,50,0,,tradebook\n";
+  await page.getByLabel("CSV or Excel file").setInputFiles({ name: "t.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "no cash" })).toContainText("no cash to pay");
+  await page.getByRole("button", { name: /Fund purchases automatically/ }).click();
+  await expect(page.getByRole("status")).toContainText("1 valid");
+  await page.getByRole("button", { name: /Confirm import of 1 rows/ }).click();
+  await expect(page.getByRole("status")).toContainText("Imported 1");
+});
+
+test("holdings file with different column names is mapped and imported", async ({ page }) => {
+  await signIn(page, `e2e_h2_${Date.now()}`);
+  await page.getByRole("button", { name: "Start empty" }).click();
+  await page.getByRole("link", { name: "Import holdings" }).click();
+  const csv = "Symbol,Qty,Avg Price,Buy Date\nACME,10,50,2025-01-10\nBOLT,5,80,2025-01-10\n";
+  await page.getByLabel("CSV or Excel file").setInputFiles({ name: "h.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await expect(page.getByText("Match your file's columns")).toBeVisible();
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByRole("status")).toContainText("2 valid");
+  await page.getByRole("button", { name: /Confirm import of 2 rows/ }).click();
+  await expect(page.getByRole("status")).toContainText("Imported 2");
+  await page.getByRole("link", { name: "View holdings" }).click();
+  await expect(page.getByRole("link", { name: "ACME" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "BOLT" })).toBeVisible();
+});
+
+test("the Mutual funds tab rejects stocks and accepts funds", async ({ page }) => {
+  await signIn(page, `e2e_mf_${Date.now()}`);
+  await page.getByRole("button", { name: "Start empty" }).click();
+  await page.getByRole("link", { name: "Import holdings" }).click();
+  await page.getByRole("button", { name: "Mutual funds" }).click();
+  const csv = "symbol,quantity,average_price,date\nACME,10,50,2025-01-10\nGRWF,25,40,2025-01-10\n";
+  await page.getByLabel("CSV or Excel file").setInputFiles({ name: "h.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByRole("status")).toContainText("1 valid");
+  await expect(page.getByText("import it under stocks & ETFs")).toBeVisible();
+});
+
 test("rupee demo portfolio shows ₹ amounts and Indian holdings", async ({ page }) => {
   await signIn(page, `e2e_inr_${Date.now()}`);
   await page.getByRole("button", { name: /Indian Rupee/ }).click();
   await loadDemo(page);
   await expect(page.locator(".hero")).toContainText("₹");
-  await page.getByRole("link", { name: "Holdings" }).click();
+  await page.getByRole("link", { name: "Holdings", exact: true }).click();
   await expect(page.getByRole("link", { name: "INFX" })).toBeVisible();
   await expect(page.getByRole("link", { name: "ACME" })).toHaveCount(0); // USD asset never appears in a rupee portfolio
 });
@@ -95,7 +136,7 @@ test("quick start builds a portfolio from what I own", async ({ page }) => {
 test("analytics page lists every holding including funds, with filters", async ({ page }) => {
   await signIn(page, `e2e_a_${Date.now()}`);
   await loadDemo(page);
-  await page.getByRole("link", { name: "Analytics" }).click();
+  await page.getByRole("link", { name: "Analytics", exact: true }).click();
   await expect(page.getByText("Portfolio XIRR")).toBeVisible();
   await expect(page.getByRole("link", { name: "GRWF" })).toBeVisible();
   await page.getByRole("button", { name: "Mutual funds" }).click();
@@ -108,7 +149,7 @@ test("analytics page lists every holding including funds, with filters", async (
 test("SIP page shows the demo SIP and can pause it", async ({ page }) => {
   await signIn(page, `e2e_s_${Date.now()}`);
   await loadDemo(page);
-  await page.getByRole("link", { name: "SIPs" }).click();
+  await page.getByRole("link", { name: "SIPs", exact: true }).click();
   const card = page.getByRole("region", { name: "SIP GRWF" });
   await expect(card.getByText("Active", { exact: true })).toBeVisible();
   await card.getByRole("button", { name: "Pause" }).click();

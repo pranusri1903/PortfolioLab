@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.models  # noqa: F401
+from app.api.market import get_provider
 from app.db import Base, get_session, make_engine
 from app.main import app
 from app.services.demo import seed_market_data
@@ -37,6 +38,22 @@ def client(engine, db):
 
 def auth(user="alice"):
     return {"Authorization": f"Bearer dev:{user}"}
+
+
+class OfflineProvider:
+    """Stands in for the live providers so tests never touch the network."""
+
+    stocks = funds = None
+
+    def search(self, q, currency=None):
+        return []
+
+
+@pytest.fixture(autouse=True)
+def offline(request):
+    if "client" in request.fixturenames:
+        app.dependency_overrides[get_provider] = lambda: OfflineProvider()
+    yield
 
 
 @pytest.fixture
