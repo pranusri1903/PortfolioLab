@@ -33,7 +33,11 @@ def test_xirr_matches_simple_annual_return():
 
 def test_one_portfolio_per_currency_and_inr_demo(client):
     usd, inr = new_portfolio(client), new_portfolio(client, "INR", demo=True)
-    assert client.post(BASE, json={"name": "x", "currency": "INR"}, headers=H).status_code == 409
+    dup_demo = {"name": "x", "currency": "INR", "load_demo_data": True}
+    assert client.post(BASE, json=dup_demo, headers=H).status_code == 409  # one demo per currency
+    assert (
+        client.post(BASE, json={"name": "x", "currency": "USD"}, headers=H).status_code == 409
+    )  # one real per currency
     s = client.get(f"{BASE}/{inr}/summary", headers=H).json()
     assert (
         s["portfolio"]["base_currency"] == "INR" and s["is_sample_data"] and D(s["total_value"]) > 1_000_000
@@ -384,3 +388,28 @@ def test_mfapi_parsing_filters_idcw_and_orders_oldest_first():
         (date(2025, 1, 2), D("12.0")),
         (date(2025, 1, 3), D("12.5")),
     ]
+
+
+def test_demo_does_not_block_a_real_portfolio_and_can_be_abandoned(client):
+    demo = new_portfolio(client, demo=True)
+    real = new_portfolio(client)  # a real USD portfolio alongside the USD demo
+    assert {p["is_demo"] for p in client.get(BASE, headers=H).json()} == {True, False}
+    assert client.delete(f"{BASE}/{demo}", headers=auth("intruder")).status_code == 404
+    assert client.delete(f"{BASE}/{demo}", headers=H).status_code == 204
+    assert client.get(f"{BASE}/{demo}", headers=H).status_code == 404
+    assert [p["id"] for p in client.get(BASE, headers=H).json()] == [real]
+    again = new_portfolio(client, demo=True)  # the demo slot is free again
+    assert client.get(f"{BASE}/{again}/summary", headers=H).status_code == 200
+
+
+def test_deleting_a_portfolio_removes_its_data(client, db):
+    from sqlalchemy import func, select
+
+    from app.models import SipPlan, Transaction
+
+    pid = new_portfolio(client, demo=True)
+    assert db.scalar(select(func.count()).select_from(SipPlan)) == 1
+    assert client.delete(f"{BASE}/{pid}", headers=H).status_code == 204
+    db.expire_all()
+    assert db.scalar(select(func.count()).select_from(Transaction)) == 0
+    assert db.scalar(select(func.count()).select_from(SipPlan)) == 0

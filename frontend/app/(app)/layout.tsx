@@ -23,8 +23,9 @@ function Onboarding({ existing, onDone }: { existing: Portfolio[]; onDone: (id: 
   const api = useApi();
   const router = useRouter();
   const { mutate } = useSWRConfig();
-  const taken = existing.map((p) => p.base_currency);
-  const [currency, setCurrencyChoice] = useState<"USD" | "INR">(taken.includes("USD") ? "INR" : "USD");
+  const has = (c: string, demo: boolean) => existing.some((p) => p.base_currency === c && p.is_demo === demo);
+  const [currency, setCurrencyChoice] = useState<"USD" | "INR">(has("USD", false) && !has("INR", false) ? "INR" : "USD");
+  const realTaken = has(currency, false);
   const [error, setError] = useState<Error>();
   async function create(mode: "demo" | "quick" | "empty") {
     try {
@@ -42,17 +43,42 @@ function Onboarding({ existing, onDone }: { existing: Portfolio[]; onDone: (id: 
         <p className="mt-1 text-sm text-slate-500">Each portfolio has one currency, and holds assets that trade in it. You can have one in dollars and one in rupees.</p></div>
       <div role="group" aria-label="Currency" className="mx-auto flex w-fit gap-1 rounded-xl bg-slate-200/60 p-1 dark:bg-slate-800">
         {(["USD", "INR"] as const).map((c) => (
-          <button key={c} disabled={taken.includes(c)} aria-pressed={currency === c} onClick={() => setCurrencyChoice(c)}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition disabled:opacity-40 ${currency === c ? "bg-white text-indigo-700 shadow dark:bg-slate-700 dark:text-white" : "text-slate-600"}`}>
+          <button key={c} aria-pressed={currency === c} onClick={() => setCurrencyChoice(c)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${currency === c ? "bg-white text-indigo-700 shadow dark:bg-slate-700 dark:text-white" : "text-slate-600"}`}>
             {c === "USD" ? "$ US Dollar" : "₹ Indian Rupee"}</button>))}
       </div>
       {error && <ErrorBox error={error} />}
       <div className="flex flex-wrap justify-center gap-2">
-        <button className="btn-primary" onClick={() => create("quick")}>Enter my holdings</button>
-        <button className="btn" onClick={() => create("demo")}>Load demo portfolio</button>
-        <button className="btn" onClick={() => create("empty")}>Start empty</button>
+        <button className="btn-primary" disabled={realTaken} onClick={() => create("quick")}>Enter my holdings</button>
+        <button className="btn" disabled={has(currency, true)} onClick={() => create("demo")}>Load demo portfolio</button>
+        <button className="btn" disabled={realTaken} onClick={() => create("empty")}>Start empty</button>
       </div>
+      {(realTaken || has(currency, true)) && (
+        <p className="text-xs text-amber-700">
+          {realTaken && `You already have your own ${currency} portfolio. `}{has(currency, true) && `The ${currency} demo already exists.`}
+        </p>)}
       <p className="text-xs text-slate-500">Demo uses synthetic sample data. &ldquo;Enter my holdings&rdquo; builds your portfolio from what you own today.</p>
+    </div>
+  );
+}
+
+function DemoBanner({ portfolio, onGone }: { portfolio: Portfolio; onGone: () => void }) {
+  const api = useApi();
+  const { mutate } = useSWRConfig();
+  const [error, setError] = useState<Error>();
+  async function abandon() {
+    if (!confirm("Abandon this demo portfolio? Its sample transactions and SIPs will be deleted. You can load the demo again later.")) return;
+    try {
+      await api(`/api/v1/portfolios/${portfolio.id}`, { method: "DELETE" });
+      await mutate(() => true);
+      onGone();
+    } catch (e) { setError(e as Error); }
+  }
+  return (
+    <div role="note" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-900/20">
+      <span>You&apos;re exploring a <b>demo {portfolio.base_currency} portfolio</b> with synthetic data. Nothing here is real.</span>
+      <span className="flex gap-2">{error && <span className="text-red-700">{error.message}</span>}
+        <button className="btn" onClick={abandon}>Abandon demo</button></span>
     </div>
   );
 }
@@ -92,9 +118,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         {data && data.length > 0 && (
           <div className="space-y-1">
             <select aria-label="Portfolio" className="input w-full" value={portfolio?.id} onChange={(e) => choose(e.target.value)}>
-              {data.map((p) => <option key={p.id} value={p.id}>{p.base_currency === "INR" ? "₹" : "$"} {p.name}</option>)}
+              {data.map((p) => <option key={p.id} value={p.id}>{p.base_currency === "INR" ? "₹" : "$"} {p.name}{p.is_demo ? " (demo)" : ""}</option>)}
             </select>
-            {data.length < 2 && <button className="btn w-full justify-center text-xs" onClick={() => setCreating(true)}><Plus size={14} />Add {data[0].base_currency === "USD" ? "₹ INR" : "$ USD"} portfolio</button>}
+            <button className="btn w-full justify-center text-xs" onClick={() => setCreating(true)}><Plus size={14} />Add portfolio</button>
           </div>)}
         <nav aria-label="Main" className="flex gap-1 overflow-x-auto md:flex-col">
           {LINKS.map(([label, href, Icon]) => {
@@ -116,7 +142,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           {error ? <ErrorBox error={error} /> : !data ? <Loading /> : data.length === 0 || creating ? (
             <Onboarding existing={data} onDone={choose} />
           ) : (
-            <Ctx.Provider value={{ id: portfolio!.id, portfolio: portfolio! }} key={portfolio!.id}>{children}</Ctx.Provider>
+            <Ctx.Provider value={{ id: portfolio!.id, portfolio: portfolio! }} key={portfolio!.id}>
+              {portfolio!.is_demo && <DemoBanner portfolio={portfolio!} onGone={() => { localStorage.removeItem("pl_pid"); setSel(null); router.push("/dashboard"); }} />}
+              {children}
+            </Ctx.Provider>
           )}
           <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-800">
             <span>Analytics only — not investment advice. Demo portfolios use synthetic sample data.</span>

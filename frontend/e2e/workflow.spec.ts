@@ -114,3 +114,26 @@ test("SIP page shows the demo SIP and can pause it", async ({ page }) => {
   await card.getByRole("button", { name: "Pause" }).click();
   await expect(card.getByText("Paused")).toBeVisible();
 });
+
+test("a demo portfolio can be abandoned, freeing the slot for my own", async ({ page }) => {
+  page.on("dialog", (d) => d.accept());
+  await signIn(page, `e2e_ab_${Date.now()}`);
+  await loadDemo(page);
+  await expect(page.getByRole("note")).toContainText("demo USD portfolio");
+  await page.getByRole("button", { name: "Abandon demo" }).click();
+  await expect(page.getByRole("heading", { name: "Create your portfolio" })).toBeVisible();
+  await page.getByRole("button", { name: "Start empty" }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("note")).toHaveCount(0); // no demo banner on a real portfolio
+  await expect(page.getByText("Your USD portfolio is empty")).toBeVisible();
+});
+
+test("my own USD portfolio can sit alongside the USD demo", async ({ page }) => {
+  await signIn(page, `e2e_both_${Date.now()}`);
+  await loadDemo(page);
+  await page.getByRole("button", { name: "Add portfolio" }).click();
+  await expect(page.getByRole("button", { name: "Load demo portfolio" })).toBeDisabled(); // demo already exists
+  await page.getByRole("button", { name: "Start empty" }).click();
+  await expect(page.getByText("Your USD portfolio is empty")).toBeVisible();
+  await expect(page.getByLabel("Portfolio").locator("option")).toHaveCount(2);
+});

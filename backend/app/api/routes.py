@@ -54,9 +54,15 @@ def health() -> dict:
 
 @router.post("/portfolios", response_model=PortfolioOut, status_code=201)
 def create_portfolio(body: PortfolioCreate, db: Db, user: User):
-    if any(x.base_currency == body.currency for x in repo.list_portfolios(db, user)):
+    kind = "demo" if body.load_demo_data else "real"
+    if any(
+        x.base_currency == body.currency and x.is_demo == body.load_demo_data
+        for x in repo.list_portfolios(db, user)
+    ):
         raise ApiError(
-            409, "portfolio_exists", f"You already have a {body.currency} portfolio (one per currency)."
+            409,
+            "portfolio_exists",
+            f"You already have a {kind} {body.currency} portfolio (one {kind} portfolio per currency).",
         )
     p = Portfolio(owner_id=user, name=body.name, base_currency=body.currency, is_demo=body.load_demo_data)
     db.add(p)
@@ -75,6 +81,14 @@ def list_portfolios(db: Db, user: User):
 @router.get("/portfolios/{portfolio_id}", response_model=PortfolioOut)
 def get_portfolio(p: Owned):
     return p
+
+
+@router.delete("/portfolios/{portfolio_id}", status_code=204)
+def delete_portfolio(p: Owned, db: Db):
+    """Permanently removes the portfolio with its transactions, SIPs and history."""
+    db.delete(p)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/portfolios/{portfolio_id}/summary", response_model=an.SummaryResponse)
