@@ -47,6 +47,8 @@ class Asset(Base):
     symbol: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     asset_type: Mapped[str] = mapped_column(String(16), nullable=False)  # STOCK | ETF
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD", server_default="USD")
+    exchange: Mapped[str | None] = mapped_column(String(16))  # MIC code; NULL for sample assets
 
 
 class Transaction(Base):
@@ -71,10 +73,30 @@ class Transaction(Base):
     cash_amount: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    sip_plan_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sip_plans.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     asset: Mapped[Asset | None] = relationship(lazy="joined")
+
+
+class SipPlan(Base):
+    """Recurring monthly investment. Each installment becomes a DEPOSIT + BUY pair."""
+
+    __tablename__ = "sip_plans"
+    __table_args__ = (Index("ix_sip_plans_portfolio", "portfolio_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    portfolio_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("portfolios.id", ondelete="CASCADE"))
+    asset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("assets.id"))
+    amount: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
+    day_of_month: Mapped[int] = mapped_column(nullable=False)  # 1-28
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    asset: Mapped[Asset] = relationship(lazy="joined")
 
 
 class DailyPrice(Base):

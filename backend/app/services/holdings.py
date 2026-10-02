@@ -44,7 +44,7 @@ def value_portfolio(s: Session, p: Portfolio) -> Valuation:
     rows = repo.all_transactions(s, p.id)
     state = replay(to_txns(rows)) if rows else LedgerState()
     assets = repo.assets_by_symbol(s)
-    as_of = repo.latest_price_date(s)
+    as_of = repo.latest_price_date(s, p.base_currency)
     held = {sym: pos for sym, pos in state.positions.items() if pos.quantity > ZERO}
     book = PriceBook.load(s, [assets[sym].id for sym in held])
     max_age = timedelta(days=get_settings().stale_price_days)
@@ -100,14 +100,14 @@ def value_portfolio(s: Session, p: Portfolio) -> Valuation:
     )
 
 
-def holdings_response(s: Session, p: Portfolio) -> HoldingsResponse:
+def holdings_response(s: Session, p: Portfolio, asset_type: str | None = None) -> HoldingsResponse:
     v = value_portfolio(s, p)
     return HoldingsResponse(
         as_of=v.as_of,
         is_sample_data=v.is_sample,
         value_complete=v.value_complete,
         unavailable_symbols=v.unavailable,
-        holdings=v.holdings,
+        holdings=[h for h in v.holdings if not asset_type or h.asset_type == asset_type],
     )
 
 

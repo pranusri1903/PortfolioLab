@@ -3,8 +3,8 @@ import type { MonthlyReturns } from "@/lib/types";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** Green/red intensity scales with the return (display only). Cell text keeps it readable without colour. */
-const tint = (v: number) => `rgb(${v >= 0 ? "16 185 129" : "239 68 68"} / ${Math.min(0.12 + Math.abs(v) * 6, 0.85)})`;
+/** Pastel green/red; intensity scales with the return. Cell text keeps it readable without colour. */
+const tint = (v: number) => `rgb(${v >= 0 ? "127 216 168" : "245 163 163"} / ${Math.min(0.2 + Math.abs(v) * 7, 0.75)})`;
 
 export function MonthlyHeatmap({ months }: { months: MonthlyReturns["months"] }) {
   const years = [...new Set(months.map((m) => m.month.slice(0, 4)))];
@@ -17,7 +17,7 @@ export function MonthlyHeatmap({ months }: { months: MonthlyReturns["months"] })
         <tbody>{years.map((y) => (
           <tr key={y}><th scope="row" className="pr-2 text-right font-medium text-slate-500">{y}</th>
             {MONTHS.map((_, i) => { const v = get(y, i); return (
-              <td key={i} className="rounded-md py-2" style={v == null ? undefined : { background: tint(v) }}>{v == null ? "" : percent(v).replace(".00", "")}</td>); })}
+              <td key={i} className="rounded-md py-2 text-slate-800 dark:text-slate-100" style={v == null ? undefined : { background: tint(v) }}>{v == null ? "" : percent(v).replace(".00", "")}</td>); })}
           </tr>))}
         </tbody>
       </table>

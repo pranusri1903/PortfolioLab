@@ -1,5 +1,5 @@
 import uuid
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -40,6 +40,11 @@ class PriceBook:
         if i == 0:
             return None
         return PriceLookup(self._closes[asset_id][i - 1], dates[i - 1])
+
+    def on_or_after(self, asset_id: uuid.UUID, on: date) -> PriceLookup | None:
+        dates = self._dates.get(asset_id, [])
+        i = bisect_left(dates, on)
+        return PriceLookup(self._closes[asset_id][i], dates[i]) if i < len(dates) else None
 
     def series(self, asset_id: uuid.UUID) -> list[tuple[date, Decimal]]:
         return list(zip(self._dates.get(asset_id, []), self._closes.get(asset_id, []), strict=True))

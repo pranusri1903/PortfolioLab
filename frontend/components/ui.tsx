@@ -60,3 +60,15 @@ export function Accessible({ label, rows, children }: { label: string; rows: (st
     </figure>
   );
 }
+
+/** Segmented toggle used for filters and ranges. */
+export function Seg({ opts, value, set, label }: { opts: readonly (readonly string[])[]; value: string; set: (v: string) => void; label: string }) {
+  return (
+    <div role="group" aria-label={label} className="flex flex-wrap gap-1 rounded-xl bg-slate-200/60 p-1 dark:bg-slate-800">
+      {opts.map(([v, l]) => (
+        <button key={v} aria-pressed={value === v} onClick={() => set(v)}
+          className={`rounded-lg px-3 py-1 text-sm font-medium transition ${value === v ? "bg-white text-indigo-700 shadow dark:bg-slate-700 dark:text-white" : "text-slate-600"}`}>{l}</button>
+      ))}
+    </div>
+  );
+}

@@ -1,0 +1,14 @@
+name: Update prices
+on:
+  schedule:
+    - cron: "30 22 * * 1-5"   # weekdays 22:30 UTC: after the US close; NSE/AMFI NAVs are already published
+  workflow_dispatch: {}
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the API's price update
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 30 --retry-all-errors --max-time 180 \
+            -X POST "${{ secrets.API_URL }}/api/v1/admin/update-prices" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"

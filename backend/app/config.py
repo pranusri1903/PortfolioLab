@@ -18,8 +18,14 @@ class Settings(BaseSettings):
     clerk_issuer: str = ""
 
     risk_free_rate: Decimal = Decimal("0.02")  # annual, used for the Sharpe ratio
-    benchmark_symbol: str = "BNCH"
+    benchmark_usd: str = "BNCH"  # set to e.g. SPY when live data is enabled
+    benchmark_inr: str = "NIFB"  # e.g. NIFTYBEES.NS
+    twelve_data_api_key: str = ""
+    cron_secret: str = ""  # shared secret for POST /api/v1/admin/update-prices
     stale_price_days: int = 7
+
+    def benchmark_for(self, currency: str) -> str:
+        return self.benchmark_inr if currency == "INR" else self.benchmark_usd
 
     @field_validator("database_url")
     @classmethod

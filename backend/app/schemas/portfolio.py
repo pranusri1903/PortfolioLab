@@ -6,11 +6,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 TxType = Literal["BUY", "SELL", "DIVIDEND", "DEPOSIT", "WITHDRAWAL", "FEE"]
-RangeKey = Literal["1M", "3M", "1Y", "All"]
+RangeKey = Literal["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y", "All"]
 
 
 class PortfolioCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    currency: Literal["USD", "INR"] = "USD"
     load_demo_data: bool = False
 
 
@@ -29,6 +30,8 @@ class AssetOut(BaseModel):
     symbol: str
     name: str
     asset_type: str
+    currency: str
+    exchange: str | None
 
 
 class TransactionIn(BaseModel):
@@ -40,6 +43,32 @@ class TransactionIn(BaseModel):
     fee: Decimal = Decimal("0")
     cash_amount: Decimal | None = None
     notes: str | None = Field(default=None, max_length=500)
+
+
+class QuickStartHolding(BaseModel):
+    symbol: str
+    quantity: Decimal
+    average_price: Decimal
+    date: date
+
+
+class QuickStart(BaseModel):
+    cash: Decimal = Decimal("0")
+    holdings: list[QuickStartHolding] = Field(default_factory=list, max_length=100)
+
+
+class SipCreate(BaseModel):
+    symbol: str
+    amount: Decimal
+    day_of_month: int = 5
+    start_date: date
+    end_date: date | None = None
+
+
+class SipPatch(BaseModel):
+    active: bool | None = None
+    amount: Decimal | None = None
+    end_date: date | None = None
 
 
 class TransactionPatch(BaseModel):

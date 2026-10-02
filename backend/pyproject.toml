@@ -5,6 +5,7 @@ description = "PortfolioLab API: portfolio analytics (sample data, not investmen
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115",
+  "httpx>=0.27",
   "uvicorn[standard]>=0.30",
   "sqlalchemy>=2.0",
   "alembic>=1.13",
@@ -16,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.5", "mypy>=1.10"]
+dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10"]
 
 [build-system]
 requires = ["setuptools>=68"]

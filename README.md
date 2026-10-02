@@ -26,7 +26,25 @@ Next.js 16 · TypeScript · Tailwind · Recharts · SWR | FastAPI · Pydantic ·
 
 ## Features
 
-Dashboard with hero value + sparkline, range switcher, benchmark comparison, risk metrics, monthly-returns heatmap, realized P/L / dividends / fees, allocation donuts, best & worst positions; sortable holdings; per-asset detail; transaction CRUD with filters and pagination; safe CSV import/export; light/dark theme; accessible chart data tables.
+- **Two currencies:** USD and INR portfolios (one of each per user, switchable). A portfolio only holds assets that trade in its currency, so no FX guesswork.
+- **Stocks, ETFs and mutual funds:** search any ticker or fund name; live-priced assets are added on demand with their price history.
+- **SIPs:** monthly recurring investments into any asset. Installments are back-filled from historical prices and recorded as deposit + buy pairs, so returns exclude money paid in.
+- **Complete analytics** (`/analytics`): per-holding invested, value, unrealized/realized P/L, dividends, XIRR, 1-year volatility, drawdown, distance from 52-week high; portfolio XIRR, concentration/diversification, correlation matrix, risk-vs-return, drawdown curve; sold positions included.
+- **Dashboard:** hero value + sparkline, 8 date ranges (1M–All, YTD), benchmark comparison, risk metrics, monthly-returns heatmap, income & costs, allocation donuts, best/worst positions.
+- **Getting data in:** quick-start wizard ("what I own"), CSV import with column mapping for broker exports (Indian date formats, ₹/commas handled), manual entry, CSV export.
+- **Filters:** holdings by class and profit/loss; analytics by class and open/closed; transactions by symbol, type, asset class, source (SIP/manual) and dates.
+- Pastel chart palette, light/dark theme, accessible chart data tables.
+
+## Market data
+
+| Asset | Source | Key | Notes |
+|---|---|---|---|
+| US stocks / ETFs | Twelve Data | `TWELVE_DATA_API_KEY` | Free plan: 800 requests/day, 8/min. **Its licence is "internal non-display use"**: showing prices to other users publicly needs a paid display licence. |
+| NSE/BSE stocks (`RELIANCE.NS`, `.BO`) | Twelve Data | same | Whether your plan includes Indian exchanges is not stated in their public docs: check before relying on it. |
+| Indian mutual funds (`MF-<AMFI code>`) | mfapi.in (AMFI NAV data) | none | Free community service, no SLA. Growth plans only (IDCW payouts are not modelled). |
+| Demo | seeded generator | none | Fictional symbols, labelled "Sample data". |
+
+Prices are fetched once per symbol for all users and stored in `daily_prices`. A daily GitHub Action (`.github/workflows/update-prices.yml`) calls `POST /api/v1/admin/update-prices` (protected by `CRON_SECRET`), which appends new closes, runs due SIP installments and rebuilds snapshots.
 
 ## Deploy
 
@@ -87,14 +105,14 @@ Header must be exactly `trade_date,type,symbol,quantity,price,fee,cash_amount,no
 ## Testing
 
 ```bash
-cd backend  && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/mypy app   # 34 tests
+cd backend  && .venv/bin/pytest -q && .venv/bin/ruff check . && .venv/bin/mypy app   # 50 tests
 cd frontend && npm test && npm run lint && npm run typecheck && npm run e2e         # 4 unit, 4 browser tests
 ```
 Backend tests run on in-memory SQLite and cover buys/sells/fees/dividends/cash flows, oversell and overdraw rejection, cross-user access, CSV preview edge cases, missing prices, insufficient history, zero denominators, Clerk JWT validation, and the Alembic migration. They have **not** been run against PostgreSQL in this repo's environment; CI uses SQLite as well.
 
 ## Known limitations
 
-- USD only, stocks/ETFs only, one portfolio per user, sample data only. No live data provider.
+- USD and INR only, one portfolio per currency, no cross-currency holdings or FX conversion. Mutual-fund IDCW/dividend payouts and fund-level expense details are not modelled. Live data depends on third-party providers and their plans.
 - Not deployed yet: no public demo, screenshots or video (Milestone 6 pending). Clerk integration is implemented but untested against a real Clerk instance (the JWT verifier is unit-tested with locally generated keys).
 - Route protection is client-side; the API enforces auth and ownership on every call, and pages hold no data of their own.
 - Snapshots are rebuilt in full after each change (fine at MVP scale). Transactions dated after the latest price date count toward holdings but not yet in the chart.

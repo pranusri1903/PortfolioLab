@@ -54,6 +54,8 @@ def query_transactions(
     *,
     symbol: str | None,
     tx_type: str | None,
+    asset_type: str | None = None,
+    source: str | None = None,
     date_from: date | None,
     date_to: date | None,
     page: int,
@@ -64,6 +66,12 @@ def query_transactions(
         conds.append(Asset.symbol == symbol.upper())
     if tx_type:
         conds.append(Transaction.type == tx_type)
+    if asset_type:
+        conds.append(Asset.asset_type == asset_type)
+    if source:
+        conds.append(
+            Transaction.sip_plan_id.is_not(None) if source == "sip" else Transaction.sip_plan_id.is_(None)
+        )
     if date_from:
         conds.append(Transaction.trade_date >= datetime.combine(date_from, time.min, tzinfo=UTC))
     if date_to:
@@ -92,14 +100,19 @@ def prices_for_assets(s: Session, asset_ids: list[uuid.UUID]) -> list[DailyPrice
     )
 
 
-def latest_price_date(s: Session) -> date | None:
-    return s.scalar(select(func.max(DailyPrice.date)))
+def latest_price_date(s: Session, currency: str) -> date | None:
+    return s.scalar(select(func.max(DailyPrice.date)).join(Asset).where(Asset.currency == currency))
 
 
-def price_dates(s: Session, start: date) -> list[date]:
+def price_dates(s: Session, start: date, currency: str) -> list[date]:
+    """Trading days = dates with a price for any asset in the portfolio's currency."""
     return list(
         s.scalars(
-            select(DailyPrice.date).where(DailyPrice.date >= start).distinct().order_by(DailyPrice.date)
+            select(DailyPrice.date)
+            .join(Asset)
+            .where(DailyPrice.date >= start, Asset.currency == currency)
+            .distinct()
+            .order_by(DailyPrice.date)
         )
     )
 
@@ -123,3 +136,7 @@ def snapshots(s: Session, portfolio_id: uuid.UUID) -> list[DailySnapshot]:
             .order_by(DailySnapshot.date)
         )
     )
+
+
+def latest_price_date_for(s: Session, asset_id: uuid.UUID) -> date | None:
+    return s.scalar(select(func.max(DailyPrice.date)).where(DailyPrice.asset_id == asset_id))

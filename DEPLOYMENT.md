@@ -57,6 +57,13 @@ Free Render services sleep after ~15 min idle; the first request then takes ~30�
 3. Deploy, copy the resulting URL, and set it as `CORS_ORIGINS` on Render (then redeploy the API).
 4. In Clerk → **Domains / Paths**, add your Vercel domain if prompted.
 
+## 5b. Real prices, ticker search and daily updates (optional)
+Without this the app only knows the fictional sample assets. Indian mutual funds work with no key at all (mfapi.in), so you can search and add them straight away.
+1. Get a free key at twelvedata.com (stocks & ETFs). **Read its licence**: the free plan is for internal, non-display use. A public app showing prices to other people needs a paid display plan.
+2. On Render add `TWELVE_DATA_API_KEY`, a random `CRON_SECRET` (e.g. `openssl rand -hex 32`), and optionally `BENCHMARK_USD=SPY`, `BENCHMARK_INR=NIFTYBEES.NS`. Redeploy.
+3. In GitHub → Settings → Secrets and variables → Actions add `API_URL` (your Render URL, no trailing `/`) and the same `CRON_SECRET`.
+4. Actions → **Update prices** → *Run workflow* to test. It then runs every weekday at 22:30 UTC.
+
 ## 6. Verify end to end
 Open the Vercel URL → sign up → **Load demo portfolio** → the dashboard should show the "Sample data" badge. If not:
 
@@ -67,6 +74,8 @@ Open the Vercel URL → sign up → **Load demo portfolio** → the dashboard sh
 | 500 `auth_misconfigured` | `CLERK_ISSUER` / `CLERK_JWKS_URL` missing on Render |
 | API fails at boot with connection errors | Use the Supabase *Session pooler* URL; re-check the password encoding |
 | Slow first load | Free-tier cold start, see above |
+| Search finds no US/NSE tickers | `TWELVE_DATA_API_KEY` missing on Render, or your Twelve Data plan lacks that exchange |
+| Update workflow fails with 403 | `CRON_SECRET` differs between GitHub and Render |
 
 ## Alternatives
 - **Railway / Fly.io** instead of Render: same Dockerfile, same env vars (the container honours `$PORT`).

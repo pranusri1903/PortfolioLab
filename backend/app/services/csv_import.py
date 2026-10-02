@@ -11,7 +11,7 @@ import io
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
@@ -62,6 +62,60 @@ def _dec(name: str, raw: str | None, errors: list[str]) -> Decimal | None:
     return d
 
 
+TYPE_ALIASES = {
+    "BUY": "BUY",
+    "BOUGHT": "BUY",
+    "PURCHASE": "BUY",
+    "SELL": "SELL",
+    "SOLD": "SELL",
+    "SALE": "SELL",
+    "DIVIDEND": "DIVIDEND",
+    "DIV": "DIVIDEND",
+    "DEPOSIT": "DEPOSIT",
+    "CREDIT": "DEPOSIT",
+    "SIP": "BUY",
+    "WITHDRAWAL": "WITHDRAWAL",
+    "WITHDRAW": "WITHDRAWAL",
+    "DEBIT": "WITHDRAWAL",
+    "FEE": "FEE",
+    "CHARGE": "FEE",
+}
+
+
+def normalize(text: str, mapping: dict[str, str], date_format: str) -> str:
+    """Rewrite a broker export into our canonical CSV using a column mapping (our field -> their column)."""
+    out = io.StringIO()
+    w = csv.writer(out, lineterminator="\n")
+    w.writerow(EXPECTED_HEADER)
+    for rec in csv.DictReader(io.StringIO(text)):
+
+        def get(f, rec=rec):
+            return (rec.get(mapping.get(f) or "") or "").strip()
+
+        def num(f, get=get):  # drops currency symbols, commas and signs
+            return re.sub(r"[^\d.]", "", get(f))
+
+        raw_date = get("trade_date")
+        try:
+            iso = datetime.strptime(raw_date, date_format).date().isoformat()
+        except ValueError:
+            iso = raw_date  # left as-is so the row is rejected with a clear reason
+        kind = TYPE_ALIASES.get(get("type").upper(), get("type").upper())
+        w.writerow(
+            [
+                iso,
+                kind,
+                get("symbol").upper(),
+                num("quantity"),
+                num("price"),
+                num("fee"),
+                num("cash_amount"),
+                get("notes"),
+            ]
+        )
+    return out.getvalue()
+
+
 def decode(content: bytes) -> str:
     if len(content) > MAX_BYTES:
         raise ApiError(413, "file_too_large", f"CSV exceeds {MAX_BYTES // 1000} KB.")
@@ -101,7 +155,9 @@ def parse_rows(text: str) -> list[Parsed]:
     return rows
 
 
-def _check_row(p: Parsed, assets: dict, existing_fps: set[str], seen: dict[str, int], pid) -> None:
+def _check_row(
+    p: Parsed, assets: dict, existing_fps: set[str], seen: dict[str, int], pid, currency: str
+) -> None:
     if p.status == "invalid":
         return
     errors: list[str] = []
@@ -133,8 +189,12 @@ def _check_row(p: Parsed, assets: dict, existing_fps: set[str], seen: dict[str, 
                 cash_amount=p.cash_amount,
             )
         )
+    if p.symbol and p.symbol not in assets:  # Indian brokers omit the exchange suffix
+        p.symbol = next((p.symbol + x for x in (".NS", ".BO") if p.symbol + x in assets), p.symbol)
     if p.symbol and p.symbol not in assets:
         errors.append(f"Unknown symbol '{p.symbol}'")
+    elif p.symbol and assets[p.symbol].currency != currency:
+        errors.append(f"{p.symbol} trades in {assets[p.symbol].currency}, not {currency}")
     if errors:
         p.status, p.reasons = "invalid", errors
         return
@@ -171,14 +231,21 @@ def _as_txn(p: Parsed, seq: int) -> Txn:
     )
 
 
-def analyze(s: Session, portfolio: Portfolio, content: bytes) -> list[Parsed]:
-    rows = parse_rows(decode(content))
+def analyze(
+    s: Session,
+    portfolio: Portfolio,
+    content: bytes,
+    mapping: dict | None = None,
+    date_format: str = "%Y-%m-%d",
+) -> list[Parsed]:
+    text = decode(content)
+    rows = parse_rows(normalize(text, mapping, date_format) if mapping else text)
     assets = repo.assets_by_symbol(s)
     existing = repo.all_transactions(s, portfolio.id)
     existing_fps = {t.fingerprint for t in existing}
     seen: dict[str, int] = {}
     for p in rows:
-        _check_row(p, assets, existing_fps, seen, portfolio.id)
+        _check_row(p, assets, existing_fps, seen, portfolio.id, portfolio.base_currency)
 
     # Ledger rules: accept rows greedily in file order; a row that would overdraw cash
     # or oversell (given existing data and the rows accepted so far) is rejected.
@@ -213,12 +280,16 @@ def _response(rows: list[Parsed], committed: bool, result: ImportCounts | None) 
     )
 
 
-def preview(s: Session, portfolio: Portfolio, content: bytes) -> ImportResponse:
-    return _response(analyze(s, portfolio, content), False, None)
+def preview(
+    s: Session, portfolio: Portfolio, content: bytes, mapping=None, date_format="%Y-%m-%d"
+) -> ImportResponse:
+    return _response(analyze(s, portfolio, content, mapping, date_format), False, None)
 
 
-def commit(s: Session, portfolio: Portfolio, content: bytes) -> ImportResponse:
-    rows = analyze(s, portfolio, content)
+def commit(
+    s: Session, portfolio: Portfolio, content: bytes, mapping=None, date_format="%Y-%m-%d"
+) -> ImportResponse:
+    rows = analyze(s, portfolio, content, mapping, date_format)
     assets = repo.assets_by_symbol(s)
     good = [p for p in rows if p.status == "valid"]
     try:

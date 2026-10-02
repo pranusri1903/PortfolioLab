@@ -20,7 +20,7 @@ from app.schemas.portfolio import PortfolioOut
 from app.services.holdings import value_portfolio
 from app.services.pricing import PriceBook
 
-RANGE_DAYS = {"1M": 30, "3M": 91, "1Y": 365}
+RANGE_DAYS = {"1M": 30, "3M": 91, "6M": 182, "1Y": 365, "3Y": 1095, "5Y": 1826}
 
 ASSUMPTIONS = [
     "Returns are time-weighted from daily snapshots; external deposits and withdrawals are "
@@ -54,11 +54,11 @@ def performance(s: Session, p: Portfolio, range_key: str) -> PerformanceResponse
     snaps = repo.snapshots(s, p.id)
     base = dict(
         range=range_key,
-        benchmark_symbol=cfg.benchmark_symbol,
+        benchmark_symbol=cfg.benchmark_for(p.base_currency),
         risk_free_rate=float(cfg.risk_free_rate),
         assumptions=ASSUMPTIONS,
     )
-    benchmark = repo.get_asset(s, cfg.benchmark_symbol)
+    benchmark = repo.get_asset(s, cfg.benchmark_for(p.base_currency))
     sources = repo.price_sources(s, [benchmark.id]) if benchmark else set()
     is_sample = "demo" in sources or not sources
 
@@ -78,7 +78,9 @@ def performance(s: Session, p: Portfolio, range_key: str) -> PerformanceResponse
     partial = False
     window = snaps
     if range_key != "All":
-        start_target = end - timedelta(days=RANGE_DAYS[range_key])
+        start_target = (
+            date(end.year - 1, 12, 31) if range_key == "YTD" else end - timedelta(days=RANGE_DAYS[range_key])
+        )
         idx = next((i for i, x in enumerate(snaps) if x.date > start_target), None)
         base_i = max((idx or 0) - 1, 0)  # last snapshot on/before the target start
         partial = snaps[0].date > start_target
@@ -172,7 +174,7 @@ def monthly_returns(s: Session, p: Portfolio) -> MonthlyReturnsResponse:
     snaps = repo.snapshots(s, p.id)
     points = [m.SnapshotPoint(x.date, x.total_value, x.external_cash_flow) for x in snaps]
     port, _ = m.daily_returns(points)
-    bench = repo.get_asset(s, get_settings().benchmark_symbol)
+    bench = repo.get_asset(s, get_settings().benchmark_for(p.base_currency))
     book = PriceBook.load(s, [bench.id]) if bench else PriceBook()
     bench_ret = (
         m.price_returns([(x.date, lk.close) for x in snaps if (lk := book.at(bench.id, x.date))])

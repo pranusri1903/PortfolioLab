@@ -1,4 +1,6 @@
 import uuid
+from datetime import date
+from decimal import ROUND_CEILING, Decimal
 
 from sqlalchemy.orm import Session
 
@@ -6,8 +8,8 @@ from app.calculations.ledger import ZERO, Txn, replay
 from app.errors import ApiError
 from app.models import Portfolio, Transaction
 from app.repositories import data as repo
-from app.schemas.portfolio import TransactionIn, TransactionOut, TransactionPatch
-from app.services.ledger_io import aware, to_txns
+from app.schemas.portfolio import QuickStart, TransactionIn, TransactionOut, TransactionPatch
+from app.services.ledger_io import aware, to_txn, to_txns
 from app.services.snapshots import rebuild_snapshots
 from app.services.validation import fingerprint, to_utc_datetime, validate_fields
 
@@ -50,6 +52,13 @@ def _columns(s: Session, pid: uuid.UUID, v: dict) -> dict:
 
 
 def _save(s: Session, p: Portfolio, t: Transaction, cols: dict, exclude: uuid.UUID | None) -> Transaction:
+    asset = cols["asset"]
+    if asset and asset.currency != p.base_currency:
+        raise ApiError(
+            422,
+            "currency_mismatch",
+            f"{asset.symbol} trades in {asset.currency}; this portfolio is in {p.base_currency}.",
+        )
     others = [r for r in repo.all_transactions(s, p.id) if r.id != exclude]
     probe = Transaction(portfolio_id=p.id, **cols)  # transient; validates the new ledger
     replay(
@@ -74,6 +83,57 @@ def _save(s: Session, p: Portfolio, t: Transaction, cols: dict, exclude: uuid.UU
     rebuild_snapshots(s, p.id)
     s.commit()
     return t
+
+
+def quick_start(s: Session, p: Portfolio, body: QuickStart) -> int:
+    """Turn "what I own" into a ledger: one DEPOSIT covering cost + cash, then one BUY per holding."""
+    if repo.all_transactions(s, p.id):
+        raise ApiError(409, "not_empty", "Quick start only works on a portfolio with no transactions.")
+    if not body.holdings and body.cash <= 0:
+        raise ApiError(422, "invalid_transaction", "Enter at least one holding or a cash balance.")
+    buys = [
+        _columns(
+            s,
+            p.id,
+            dict(
+                type="BUY",
+                trade_date=h.date,
+                symbol=h.symbol,
+                quantity=h.quantity,
+                price=h.average_price,
+                fee=ZERO,
+                cash_amount=None,
+                notes="Quick start",
+            ),
+        )
+        for h in body.holdings
+    ]
+    total = sum((h.quantity * h.average_price for h in body.holdings), ZERO) + body.cash
+    start = min((h.date for h in body.holdings), default=date.today())
+    deposit = _columns(
+        s,
+        p.id,
+        dict(
+            type="DEPOSIT",
+            trade_date=start,
+            symbol=None,
+            quantity=None,
+            price=None,
+            fee=ZERO,
+            cash_amount=total.quantize(Decimal("0.0001"), ROUND_CEILING),
+            notes="Quick start: opening balance",
+        ),
+    )
+    for c in (deposit, *buys):
+        if c["asset"] and c["asset"].currency != p.base_currency:
+            raise ApiError(422, "currency_mismatch", f"{c['asset'].symbol} trades in {c['asset'].currency}.")
+    txns = [Transaction(portfolio_id=p.id, **c) for c in (deposit, *buys)]
+    replay([to_txn(t, i) for i, t in enumerate(txns)])
+    s.add_all(txns)
+    s.flush()
+    rebuild_snapshots(s, p.id)
+    s.commit()
+    return len(txns)
 
 
 def create_transaction(s: Session, p: Portfolio, body: TransactionIn) -> Transaction:

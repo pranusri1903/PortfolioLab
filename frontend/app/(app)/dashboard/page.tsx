@@ -5,12 +5,13 @@ import { useState } from "react";
 import { usePid } from "../layout";
 import { BenchmarkChart, Donut, Sparkline, ValueChart } from "@/components/charts";
 import { MonthlyHeatmap } from "@/components/heatmap";
-import { Empty, ErrorBox, Loading, PageTitle, SampleBadge, Stat } from "@/components/ui";
+import { Empty, ErrorBox, Loading, PageTitle, SampleBadge, Seg, Stat } from "@/components/ui";
+import { usePortfolio } from "../layout";
 import { base, useData } from "@/lib/api";
 import { money, percent, signClass } from "@/lib/format";
 import type { Allocation, Holdings, Metric, MonthlyReturns, Performance, Summary, TxPage } from "@/lib/types";
 
-const RANGES = ["1M", "3M", "1Y", "All"] as const;
+const RANGES = ["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y", "All"] as const;
 const num = (v: number | null) => v?.toFixed(2) ?? "—";
 const METRICS = [
   ["cumulative_return", "Cumulative return", "Time-weighted return over the selected range. Deposits/withdrawals are excluded.", percent],
@@ -22,6 +23,7 @@ const METRICS = [
 
 export default function Dashboard() {
   const pid = usePid();
+  const portfolio = usePortfolio();
   const [range, setRange] = useState<(typeof RANGES)[number]>("1Y");
   const summary = useData<Summary>(`${base(pid)}/summary?range=${range}`);
   const perf = useData<Performance>(`${base(pid)}/performance?range=${range}`);
@@ -41,13 +43,16 @@ export default function Dashboard() {
   return (
     <div className="space-y-5">
       <PageTitle title="Dashboard" sub={<span className="flex items-center gap-2"><SampleBadge show={s.is_sample_data} />{s.as_of && <span>Prices as of {s.as_of}</span>}</span>}>
-        <div role="group" aria-label="Date range" className="flex gap-1 rounded-xl bg-slate-200/60 p-1 dark:bg-slate-800">
-          {RANGES.map((r) => (
-            <button key={r} aria-pressed={r === range} onClick={() => setRange(r)}
-              className={`rounded-lg px-3 py-1 text-sm font-medium transition ${r === range ? "bg-white text-indigo-700 shadow dark:bg-slate-700 dark:text-white" : "text-slate-600"}`}>{r}</button>
-          ))}
-        </div>
+        <Seg label="Date range" opts={RANGES.map((r) => [r, r])} value={range} set={(r) => setRange(r as (typeof RANGES)[number])} />
       </PageTitle>
+
+      {s.transaction_count === 0 && (
+        <section className="card flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="font-semibold">Your {portfolio.base_currency} portfolio is empty</h2>
+            <p className="text-sm text-slate-500">Tell us what you own, import your broker&apos;s CSV, or start a SIP.</p></div>
+          <div className="flex gap-2"><Link href="/get-started" className="btn-primary">Enter my holdings</Link><Link href="/transactions" className="btn">Import CSV</Link><Link href="/sips" className="btn">Add a SIP</Link></div>
+        </section>
+      )}
 
       {!s.value_complete && (
         <p role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm">
@@ -55,7 +60,7 @@ export default function Dashboard() {
         </p>
       )}
 
-      <section className="hero relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-6 text-white shadow-lg" aria-label="Total portfolio value">
+      <section className="hero relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-400 via-violet-400 to-pink-400 p-6 text-white shadow-lg" aria-label="Total portfolio value">
         <div className="grid items-end gap-4 md:grid-cols-[1fr_20rem]">
           <div>
             <div className="text-sm font-medium text-indigo-100">Total portfolio value</div>

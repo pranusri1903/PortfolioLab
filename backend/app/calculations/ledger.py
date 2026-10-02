@@ -58,6 +58,8 @@ class Txn:
 class Position:
     quantity: Decimal = ZERO
     cost_basis: Decimal = ZERO
+    realized: Decimal = ZERO
+    dividends: Decimal = ZERO
 
     @property
     def average_cost(self) -> Decimal:
@@ -139,7 +141,9 @@ def apply(state: LedgerState, t: Txn) -> None:
             )
         pos = state.positions[t.symbol]
         removed = pos.cost_basis * (qty / pos.quantity)
-        state.realized += qty * _req(t.price) - t.fee - removed
+        gain = qty * _req(t.price) - t.fee - removed
+        state.realized += gain
+        pos.realized += gain
         pos.cost_basis -= removed
         pos.quantity -= qty
         if pos.quantity == ZERO:
@@ -148,6 +152,8 @@ def apply(state: LedgerState, t: Txn) -> None:
     state.fees += t.fee + (_req(t.cash_amount) if t.type == FEE else ZERO)
     if t.type == DIVIDEND:
         state.dividends += _req(t.cash_amount)
+        if t.symbol:
+            state.positions.setdefault(t.symbol, Position()).dividends += _req(t.cash_amount)
     state.external_cash_flow += external_flow(t)
 
 

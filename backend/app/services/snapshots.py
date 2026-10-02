@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.calculations.ledger import ZERO, LedgerState, apply, external_flow, sort_txns
 from app.config import get_settings
-from app.models import DailySnapshot
+from app.models import DailySnapshot, Portfolio
 from app.repositories import data as repo
 from app.services.ledger_io import to_txns
 from app.services.pricing import PriceBook
@@ -40,7 +40,8 @@ def rebuild_snapshots(s: Session, portfolio_id: uuid.UUID) -> RebuildResult:
     max_age = timedelta(days=get_settings().stale_price_days)
 
     first = txns[0].trade_date.date()
-    days = repo.price_dates(s, first)
+    portfolio = s.get(Portfolio, portfolio_id)
+    days = repo.price_dates(s, first, portfolio.base_currency)  # type: ignore[union-attr]
 
     state = LedgerState()
     i = 0

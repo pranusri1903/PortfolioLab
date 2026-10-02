@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.market import router as market_router
 from app.api.routes import router
 from app.config import get_settings
 from app.errors import install_error_handlers
@@ -19,3 +20,4 @@ app.add_middleware(
 )
 install_error_handlers(app)
 app.include_router(router)
+app.include_router(market_router)

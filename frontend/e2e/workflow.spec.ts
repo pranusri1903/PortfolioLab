@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
+const loadDemo = async (page: Page) => {
+  await page.getByRole("button", { name: "Load demo portfolio" }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+};
+
 const signIn = async (page: Page, user: string) => {
   await page.goto("/sign-in");
   await page.getByLabel("User ID").fill(user);
@@ -13,7 +18,7 @@ test("unauthenticated visitors are sent to sign-in", async ({ page }) => {
 
 test("sign in, review demo, add a transaction, see the portfolio update", async ({ page }) => {
   await signIn(page, `e2e_${Date.now()}`);
-  await page.getByRole("button", { name: "Load demo portfolio" }).click();
+  await loadDemo(page);
 
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await expect(page.getByText("Sample data").first()).toBeVisible();
@@ -38,7 +43,7 @@ test("sign in, review demo, add a transaction, see the portfolio update", async 
 
 test("holdings are searchable and link to detail with sample label", async ({ page }) => {
   await signIn(page, `e2e_h_${Date.now()}`);
-  await page.getByRole("button", { name: "Load demo portfolio" }).click();
+  await loadDemo(page);
   await page.getByRole("link", { name: "Holdings" }).click();
   await page.getByLabel("Search holdings").fill("acme");
   await expect(page.getByRole("link", { name: "ACME" })).toBeVisible();
@@ -59,4 +64,53 @@ test("CSV import previews errors, then imports valid rows", async ({ page }) => 
   await expect(page.getByText("not a real calendar date")).toBeVisible();
   await page.getByRole("button", { name: /Confirm import of 1 rows/ }).click();
   await expect(page.getByRole("status")).toContainText("Imported 1");
+});
+
+test("rupee demo portfolio shows ₹ amounts and Indian holdings", async ({ page }) => {
+  await signIn(page, `e2e_inr_${Date.now()}`);
+  await page.getByRole("button", { name: /Indian Rupee/ }).click();
+  await loadDemo(page);
+  await expect(page.locator(".hero")).toContainText("₹");
+  await page.getByRole("link", { name: "Holdings" }).click();
+  await expect(page.getByRole("link", { name: "INFX" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "ACME" })).toHaveCount(0); // USD asset never appears in a rupee portfolio
+});
+
+test("quick start builds a portfolio from what I own", async ({ page }) => {
+  await signIn(page, `e2e_q_${Date.now()}`);
+  await page.getByRole("button", { name: "Enter my holdings" }).click();
+  await expect(page.getByRole("heading", { name: "Enter what you own" })).toBeVisible();
+  await page.getByLabel("Stock, ETF or fund").fill("ACME");
+  await page.getByRole("option", { name: /ACME/ }).click();
+  await page.getByLabel("Units / shares").fill("10");
+  await page.getByLabel(/Avg price/).fill("50");
+  await page.getByLabel("First bought").fill("2025-01-10");
+  await page.getByLabel(/Cash balance/).fill("100");
+  await page.getByRole("button", { name: "Build my portfolio" }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await page.getByRole("link", { name: "Holdings", exact: true }).click();
+  await expect(page.getByRole("link", { name: "ACME" })).toBeVisible();
+});
+
+test("analytics page lists every holding including funds, with filters", async ({ page }) => {
+  await signIn(page, `e2e_a_${Date.now()}`);
+  await loadDemo(page);
+  await page.getByRole("link", { name: "Analytics" }).click();
+  await expect(page.getByText("Portfolio XIRR")).toBeVisible();
+  await expect(page.getByRole("link", { name: "GRWF" })).toBeVisible();
+  await page.getByRole("button", { name: "Mutual funds" }).click();
+  await expect(page.getByRole("link", { name: "GRWF" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "ACME" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Closed" }).click();
+  await expect(page.getByText("No holdings for this filter")).toBeVisible();
+});
+
+test("SIP page shows the demo SIP and can pause it", async ({ page }) => {
+  await signIn(page, `e2e_s_${Date.now()}`);
+  await loadDemo(page);
+  await page.getByRole("link", { name: "SIPs" }).click();
+  const card = page.getByRole("region", { name: "SIP GRWF" });
+  await expect(card.getByText("Active", { exact: true })).toBeVisible();
+  await card.getByRole("button", { name: "Pause" }).click();
+  await expect(card.getByText("Paused")).toBeVisible();
 });
