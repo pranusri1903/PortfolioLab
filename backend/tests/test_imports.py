@@ -650,3 +650,43 @@ def test_columns_guessed_from_contents_when_headers_say_nothing(client):
     ).json()
     s = r["suggested"]["holdings"]
     assert s["symbol"] == "a" and s["trade_date"] == "b" and r["date_format"] == "%Y-%m-%d"
+
+
+def test_excel_float_noise_is_cleaned_before_validation(client):
+    pid = new_portfolio(client)
+    book = xlsx([["symbol", "quantity", "average_price"], ["ACME", 970.0189999999999, 44.8]])
+    r = upload(client, pid, book, "n.xlsx", path="holdings/import", default_date="2025-06-01").json()
+    assert r["rows"][0]["status"] == "valid", r["rows"][0]["reasons"]
+    assert r["rows"][0]["data"]["quantity"] == "970.019"
+
+
+def test_fund_from_the_other_currency_gets_a_helpful_reason(client, funds):
+    app.dependency_overrides[get_provider] = lambda: GrowwProvider()
+    usd = new_portfolio(client)  # a USD portfolio
+    csv = "symbol,quantity,average_price\nSBI Gold Direct Plan Growth,10,50\n"
+    r = upload(
+        client,
+        usd,
+        csv.encode(),
+        "h.csv",
+        path="holdings/import",
+        asset_class="fund",
+        default_date="2025-06-01",
+    ).json()
+    reason = r["rows"][0]["reasons"][0]
+    assert (
+        r["rows"][0]["status"] == "invalid"
+        and "priced in INR" in reason
+        and "import it into your INR portfolio" in reason
+    )
+    inr = new_portfolio(client, "INR")
+    ok = upload(
+        client,
+        inr,
+        csv.encode(),
+        "h.csv",
+        path="holdings/import",
+        asset_class="fund",
+        default_date="2025-06-01",
+    ).json()
+    assert ok["rows"][0]["status"] == "valid"

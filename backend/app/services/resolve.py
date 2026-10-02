@@ -32,6 +32,7 @@ class Resolver:
         self.assets, self.provider, self.currency = assets, provider, currency
         self.by_name = {norm(a.name): a for a in assets.values()}
         self.cache: dict[str, Resolved | None] = {}
+        self.other: dict[str, Resolved | None] = {}
         self.lookups = 0
 
     @staticmethod
@@ -44,21 +45,28 @@ class Resolver:
             self.cache[raw] = self._resolve(raw)
         return self.cache[raw]
 
+    def elsewhere(self, raw: str) -> Resolved | None:
+        """Does this name exist in another currency? Used to explain why a row can't go in this portfolio."""
+        raw = raw.strip()
+        if raw not in self.other:
+            self.other[raw] = self._remote(raw, None)
+        return self.other[raw]
+
     def _resolve(self, raw: str) -> Resolved | None:
         key = raw.upper()
         a = self.assets.get(key) or next(
             (self.assets[key + x] for x in (".NS", ".BO") if key + x in self.assets), None
         )
         a = a or (self.assets.get("MF-" + raw) if raw.isdigit() else None) or self.by_name.get(norm(raw))
-        return self._asset(a) if a else self._remote(raw)
+        return self._asset(a) if a else self._remote(raw, self.currency)
 
-    def _search(self, raw: str) -> list[SymbolHit]:
+    def _search(self, raw: str, currency: str | None) -> list[SymbolHit]:
         """Search the provider with the full text, then again without filler words."""
         short = " ".join(w for w in raw.split() if w.lower() not in FILLER)
         hits: dict[str, SymbolHit] = {}
         for q in dict.fromkeys([raw, short]):
             if q and not hits:
-                hits = {h.symbol: h for h in self.provider.search(q, self.currency)}
+                hits = {h.symbol: h for h in self.provider.search(q, currency)}
         return list(hits.values())
 
     @staticmethod
@@ -74,7 +82,7 @@ class Resolver:
                 close = [h for h in close if word in tokens(h.name)] or close
         return close[0] if len(close) == 1 else (hits[0] if len(hits) == 1 else None)
 
-    def _remote(self, raw: str) -> Resolved | None:
+    def _remote(self, raw: str, currency: str | None) -> Resolved | None:
         if self.provider is None or self.lookups >= MAX_LOOKUPS or len(raw) > 80:
             return None
         self.lookups += 1
@@ -83,7 +91,7 @@ class Resolver:
                 funds = getattr(self.provider, "funds", None)
                 pick = funds.lookup(raw) if funds else None
             else:
-                pick = self._pick(raw, self._search(raw))
+                pick = self._pick(raw, self._search(raw, currency))
         except ProviderError:
             return None
         if pick is None:

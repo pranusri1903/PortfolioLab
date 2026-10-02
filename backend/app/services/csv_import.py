@@ -219,10 +219,19 @@ def _check_row(
             cash_amount=p.cash_amount,
         )
     if given and p.resolved is None:
-        errors.append(
-            f"Unknown {'fund' if scope == 'fund' else 'symbol'} '{given}'"
-            + (" (use the exact scheme name or its AMFI code)" if scope == "fund" else "")
-        )
+        elsewhere = resolver.elsewhere(given)
+        if elsewhere and elsewhere.currency != currency:
+            cur = elsewhere.currency
+            errors.append(
+                f"'{given}' looks like {elsewhere.name}, which is priced in {cur}. "
+                f"This is a {currency} portfolio and only holds {currency} assets: "
+                f"import it into your {cur} portfolio."
+            )
+        else:
+            errors.append(
+                f"Unknown {'fund' if scope == 'fund' else 'symbol'} '{given}'"
+                + (" (use the exact scheme name or its AMFI code)" if scope == "fund" else "")
+            )
     elif p.resolved and p.resolved.currency != currency:
         errors.append(f"{p.symbol} trades in {p.resolved.currency}, not {currency}")
     elif p.resolved and scope and p.resolved.asset_type not in SCOPES[scope]:

@@ -64,8 +64,8 @@ def _cell(v) -> str:
         return v.date().isoformat()
     if isinstance(v, date):
         return v.isoformat()
-    if isinstance(v, float):
-        return format(Decimal(repr(v)), "f")  # avoids 1e-05 style output
+    if isinstance(v, float):  # Excel stores 970.019 as 970.0189999999999; trim that noise
+        return format(Decimal(repr(round(v, 8))).normalize(), "f")
     return _clean(str(v))
 
 

@@ -3,6 +3,7 @@ import { CheckCircle2, Download, FileSpreadsheet } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
+import { usePortfolio } from "@/app/(app)/layout";
 import { SheetView } from "@/components/sheet-view";
 import { ErrorBox, Seg } from "@/components/ui";
 import { base, useApi } from "@/lib/api";
@@ -46,6 +47,7 @@ const TEMPLATES: Record<Kind, Record<Cls, string>> = {
 
 export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
   const api = useApi();
+  const portfolio = usePortfolio();
   const { mutate } = useSWRConfig();
   const [cls, setCls] = useState<Cls>("stock");
   const [file, setFile] = useState<File>();
@@ -121,6 +123,14 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
           : `Upload your full history of ${cls === "fund" ? "mutual fund purchases, SIPs and redemptions" : cls === "stock" ? "stock and ETF trades" : "trades and fund transactions"}. Statements that list Amount and NAV work too: units are worked out for you.`}
       </p>
 
+      {portfolio.is_demo && (
+        <p role="note" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/50 dark:bg-amber-900/20">
+          You&apos;re importing into a <b>demo portfolio</b>, which would mix your real data with sample data. Use <b>Abandon demo</b> and create your own portfolio first, or pick your own portfolio in the sidebar.
+        </p>)}
+      {portfolio.base_currency === "USD" && cls !== "stock" && (
+        <p role="note" className="rounded-xl bg-indigo-50 p-3 text-sm dark:bg-indigo-500/10">
+          Indian mutual funds are priced in rupees (₹), so they can only go into an <b>INR portfolio</b>. Use <b>Add portfolio</b> in the sidebar to create one.
+        </p>)}
       <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-slate-300 p-4 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/40">
         <FileSpreadsheet className="text-indigo-400" />
         <span className="flex-1">{file ? <b>{file.name}</b> : "Choose a CSV or Excel (.xlsx) file"}{info && <span className="text-slate-500"> · {info.row_count} rows</span>}</span>
@@ -206,6 +216,11 @@ export function ImportWizard({ pid, kind }: { pid: string; kind: Kind }) {
               ? `Imported ${res.result.imported}, skipped ${res.result.skipped} duplicates, rejected ${res.result.rejected}.`
               : `${res.valid} valid, ${res.duplicate} duplicate (will be skipped), ${res.invalid} invalid (will be rejected).`}
           </p>
+          <ul className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
+            <li><b className="text-emerald-700">valid</b> will be imported</li>
+            <li><b className="text-amber-700">duplicate</b> already in your portfolio, skipped</li>
+            <li><b className="text-red-700">invalid</b> will NOT be imported: the reason is in Details</li>
+          </ul>
           <div className="max-h-72 overflow-auto">
             <table className="w-full"><thead><tr><th className="th">Row</th><th className="th">Status</th><th className="th">Holding</th><th className="th">Details</th></tr></thead>
               <tbody>{res.rows.map((r) => (
