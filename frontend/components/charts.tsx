@@ -32,7 +32,9 @@ export function ValueChart({ series }: { series: Performance["series"] }) {
   );
 }
 
-export function BenchmarkChart({ series, benchmark }: { series: Performance["series"]; benchmark: string }) {
+export function BenchmarkChart({ series, perf }: { series: Performance["series"]; perf: Pick<Performance, "benchmark_symbol" | "benchmark_name" | "benchmark_is_sample" | "benchmark_available"> }) {
+  const benchmark = perf.benchmark_symbol;
+  const label = !perf.benchmark_available ? `${benchmark} (not loaded)` : `${perf.benchmark_name ?? benchmark}${perf.benchmark_is_sample ? " — fictional sample" : ""}`;
   const rows = series.filter((_, i) => i % every(series.length) === 0).map((p) => [p.date, p.portfolio_index.toFixed(1), p.benchmark_index?.toFixed(1) ?? "n/a"]);
   return (
     <Accessible label={`Portfolio versus ${benchmark} benchmark, both indexed to 100`} rows={rows}>
@@ -41,7 +43,7 @@ export function BenchmarkChart({ series, benchmark }: { series: Performance["ser
           <Grid /><XAxis dataKey="date" minTickGap={40} /><YAxis domain={["auto", "auto"]} width={44} />
           <Tooltip {...TIP} formatter={(v) => Number(v).toFixed(1)} /><Legend />
           <Line dataKey="portfolio_index" name="Portfolio (excl. cash flows)" stroke={PRIMARY} strokeWidth={2.5} dot={false} isAnimationActive={false} />
-          <Line dataKey="benchmark_index" name={`${benchmark} (benchmark)`} stroke={PEACH} strokeWidth={2.5} dot={false} strokeDasharray="5 3" isAnimationActive={false} />
+          {perf.benchmark_available && <Line dataKey="benchmark_index" name={label} stroke={PEACH} strokeWidth={2.5} dot={false} strokeDasharray="5 3" isAnimationActive={false} />}
         </LineChart>
       </ResponsiveContainer>
     </Accessible>

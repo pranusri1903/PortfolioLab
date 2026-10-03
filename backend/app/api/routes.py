@@ -32,7 +32,7 @@ from app.schemas.portfolio import (
     TxType,
 )
 from app.services import analytics as analytics_service
-from app.services import csv_import, holdings, holdings_import, performance, sip, transactions
+from app.services import csv_import, holdings, holdings_import, performance, prices, sip, transactions
 from app.services.demo import load_demo_transactions, seed_market_data
 from app.services.tables import Source, inspect
 
@@ -58,7 +58,7 @@ def health() -> dict:
 
 
 @router.post("/portfolios", response_model=PortfolioOut, status_code=201)
-def create_portfolio(body: PortfolioCreate, db: Db, user: User):
+def create_portfolio(body: PortfolioCreate, db: Db, user: User, provider: Provider):
     kind = "demo" if body.load_demo_data else "real"
     if any(
         x.base_currency == body.currency and x.is_demo == body.load_demo_data
@@ -75,6 +75,8 @@ def create_portfolio(body: PortfolioCreate, db: Db, user: User):
     if body.load_demo_data:
         seed_market_data(db)
         load_demo_transactions(db, p)
+    else:
+        prices.ensure_benchmark(db, provider, body.currency)  # real benchmark; failures are logged, not fatal
     return p
 
 

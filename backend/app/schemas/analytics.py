@@ -98,6 +98,9 @@ class PerformanceResponse(BaseModel):
     partial: bool  # requested range starts before available history
     is_sample_data: bool
     benchmark_symbol: str
+    benchmark_name: str | None = None
+    benchmark_is_sample: bool = False  # fictional demo benchmark
+    benchmark_available: bool = False
     series: list[SeriesPoint]
     metrics: Metrics
     zero_value_days: int

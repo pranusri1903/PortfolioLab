@@ -96,7 +96,11 @@ export default function Dashboard() {
           <div className="grid gap-4 lg:grid-cols-2">
             <section className="card"><h2 className="mb-3 font-semibold">Portfolio value</h2><ValueChart series={perf.data.series} /></section>
             <section className="card"><h2 className="mb-3 font-semibold">vs. benchmark <span className="text-xs font-normal text-slate-500">(indexed to 100)</span></h2>
-              <BenchmarkChart series={perf.data.series} benchmark={perf.data.benchmark_symbol} /></section>
+              <BenchmarkChart series={perf.data.series} perf={perf.data} />
+              {perf.data.benchmark_is_sample && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">The benchmark here is a <b>fictional sample ETF</b>: demo data only, not a real market index.</p>}
+              {!perf.data.benchmark_available && <p className="mt-2 rounded-lg bg-slate-100 p-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">No real benchmark is loaded for this portfolio yet ({perf.data.benchmark_symbol}). It appears once live market data is on. We never compare a real portfolio against fictional data.</p>}
+              <details className="mt-2 text-xs text-slate-500"><summary className="cursor-pointer">How is this calculated?</summary>
+                <p className="mt-1">Both lines start at <b>100</b> on the first day shown, so the gap is the difference in return. The portfolio line is a time-weighted return index, so deposits and withdrawals don&apos;t count as gains. The benchmark line is its closing price or NAV on the same dates{perf.data.benchmark_available && !perf.data.benchmark_is_sample ? `: ${perf.data.benchmark_name}` : ""}. <Link href="/methodology#benchmark" className="text-blue-700 underline">Full methodology</Link></p></details></section>
           </div>
           <section className="card">
             <h2 className="mb-3 font-semibold">Performance metrics <Link href="/methodology" className="ml-2 text-sm font-normal text-blue-700 underline">Methodology</Link></h2>

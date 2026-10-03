@@ -11,7 +11,6 @@ from app.errors import ApiError
 from app.models import Asset, DailyPrice, Transaction
 from app.repositories import data as repo
 from app.services.live_data import CompositeProvider, ProviderError, SymbolHit
-from app.services.market_data import DEMO_ASSETS
 from app.services.snapshots import rebuild_snapshots
 
 log = logging.getLogger("portfoliolab.prices")
@@ -57,14 +56,20 @@ def add_live_asset(s: Session, provider: CompositeProvider, hit: SymbolHit) -> A
     return asset
 
 
-def _ensure_benchmarks(s: Session, provider: CompositeProvider) -> None:
-    cfg = get_settings()
-    for sym in (cfg.benchmark_usd, cfg.benchmark_inr):
-        if sym in DEMO_ASSETS or repo.get_asset(s, sym):
-            continue
-        hit = next((h for h in provider.search(sym.split(".")[0]) if h.symbol == sym), None)
-        if hit:
-            add_live_asset(s, provider, hit)
+def ensure_benchmark(s: Session, provider: CompositeProvider, currency: str) -> Asset | None:
+    """Make sure the real benchmark for this currency exists, with price history. Best effort."""
+    sym = get_settings().benchmark_for(currency)
+    if (asset := repo.get_asset(s, sym)) is not None:
+        return asset
+    try:
+        if sym.startswith("MF-"):  # an Indian mutual fund, identified by its AMFI code
+            hit = provider.funds.lookup(sym[3:]) if provider.funds else None
+        else:
+            hit = next((h for h in provider.search(sym.split(".")[0], currency) if h.symbol == sym), None)
+        return add_live_asset(s, provider, hit) if hit else None
+    except (ProviderError, ApiError) as exc:
+        log.warning("could not load benchmark %s: %s", sym, exc)
+        return None
 
 
 def update_all(s: Session, provider: CompositeProvider) -> dict:
@@ -72,10 +77,9 @@ def update_all(s: Session, provider: CompositeProvider) -> dict:
     from app.services.sip import run_all_sips
 
     failed: list[str] = []
-    try:
-        _ensure_benchmarks(s, provider)
-    except (ProviderError, ApiError) as exc:
-        failed.append(f"benchmarks: {exc}")
+    for currency in ("USD", "INR"):
+        if ensure_benchmark(s, provider, currency) is None:
+            failed.append(f"benchmark for {currency} portfolios not available")
     today, added = date.today(), 0
     for asset in s.scalars(select(Asset).where(Asset.exchange.is_not(None))).all():
         last = s.scalar(select(func.max(DailyPrice.date)).where(DailyPrice.asset_id == asset.id))

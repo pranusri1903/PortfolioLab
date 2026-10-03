@@ -20,6 +20,10 @@ from app.schemas.portfolio import PortfolioOut
 from app.services.holdings import value_portfolio
 from app.services.pricing import PriceBook
 
+BENCH_MISSING = (
+    "No real benchmark is loaded yet. It is added automatically once live market data is on "
+    "(see Settings); we don't compare real portfolios against fictional sample data."
+)
 RANGE_DAYS = {"1M": 30, "3M": 91, "6M": 182, "1Y": 365, "3Y": 1095, "5Y": 1826}
 
 ASSUMPTIONS = [
@@ -31,6 +35,10 @@ ASSUMPTIONS = [
     "stdev(excess daily return) x sqrt(252), using the stated annual risk-free rate.",
     "Not tax-adjusted and not equivalent to brokerage-reported performance.",
     "Windows are measured back from the latest available data date, not today's date.",
+    "Benchmark: a real index proxy (UTI Nifty 50 Index Fund for INR, SPY for USD) or, in demo portfolios, "
+    "a fictional sample ETF. Both lines start at 100 on the first day shown, so the gap between them is the "
+    "difference in return over the period. The benchmark ignores dividends unless its price series includes "
+    "them, and index funds carry small fees; it is a yardstick, not an investable alternative.",
 ]
 
 
@@ -54,13 +62,19 @@ def performance(s: Session, p: Portfolio, range_key: str) -> PerformanceResponse
     snaps = repo.snapshots(s, p.id)
     base = dict(
         range=range_key,
-        benchmark_symbol=cfg.benchmark_for(p.base_currency),
+        benchmark_symbol=cfg.benchmark_for(p.base_currency, p.is_demo),
         risk_free_rate=float(cfg.risk_free_rate),
         assumptions=ASSUMPTIONS,
     )
-    benchmark = repo.get_asset(s, cfg.benchmark_for(p.base_currency))
+    benchmark = repo.get_asset(s, cfg.benchmark_for(p.base_currency, p.is_demo))
     sources = repo.price_sources(s, [benchmark.id]) if benchmark else set()
-    is_sample = "demo" in sources or not sources
+    bench_sample = "demo" in sources
+    is_sample = bench_sample if benchmark else p.is_demo
+    base.update(
+        benchmark_name=benchmark.name if benchmark else None,
+        benchmark_is_sample=bench_sample,
+        benchmark_available=benchmark is not None,
+    )
 
     if len(snaps) < 2:
         return PerformanceResponse(
@@ -99,7 +113,9 @@ def performance(s: Session, p: Portfolio, range_key: str) -> PerformanceResponse
                 bench_prices[x.date] = lk.close
     bench_series = [(d, bench_prices[d]) for d in (x.date for x in window) if d in bench_prices]
     bench_ret = m.price_returns(bench_series)
-    if len(bench_series) < len(window):
+    if benchmark is None:
+        bench_cum = m.MetricValue(None, BENCH_MISSING)
+    elif len(bench_series) < len(window):
         bench_cum = m.MetricValue(None, "Benchmark prices are missing for part of this window.")
     else:
         bench_cum = m.cumulative_return(bench_ret)
@@ -174,7 +190,7 @@ def monthly_returns(s: Session, p: Portfolio) -> MonthlyReturnsResponse:
     snaps = repo.snapshots(s, p.id)
     points = [m.SnapshotPoint(x.date, x.total_value, x.external_cash_flow) for x in snaps]
     port, _ = m.daily_returns(points)
-    bench = repo.get_asset(s, get_settings().benchmark_for(p.base_currency))
+    bench = repo.get_asset(s, get_settings().benchmark_for(p.base_currency, p.is_demo))
     book = PriceBook.load(s, [bench.id]) if bench else PriceBook()
     bench_ret = (
         m.price_returns([(x.date, lk.close) for x in snaps if (lk := book.at(bench.id, x.date))])

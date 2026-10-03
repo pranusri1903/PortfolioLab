@@ -9,6 +9,7 @@ export type Summary = {
 };
 export type Performance = {
   start_date: string | null; end_date: string | null; partial: boolean; benchmark_symbol: string;
+  benchmark_name: string | null; benchmark_is_sample: boolean; benchmark_available: boolean;
   series: { date: string; total_value: string; portfolio_index: number; benchmark_index: number | null }[];
   metrics: Metrics; risk_free_rate: number; assumptions: string[];
 };

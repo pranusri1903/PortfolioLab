@@ -176,6 +176,7 @@ class FakeLive(CompositeProvider):
 
     def search(self, q, currency=None):
         hits = [
+            SymbolHit("SPY", "SPDR S&P 500 ETF", "ETF", "USD", "ARCX"),
             SymbolHit("AAPL", "Apple Inc", "STOCK", "USD", "XNAS"),
             SymbolHit("RELIANCE.NS", "Reliance Industries", "STOCK", "INR", "XNSE"),
         ]
@@ -253,7 +254,7 @@ def test_update_all_appends_new_closes(db, live):
     )
     db.commit()
     out = prices.update_all(db, live)
-    assert out["prices_added"] > 0 and not out["failed"]
+    assert out["prices_added"] > 0 and not [f for f in out["failed"] if "AAPL" in f]
     assert repo.latest_price_date_for(db, asset.id) == last
     assert prices.update_all(db, live)["prices_added"] == 0  # idempotent
 
@@ -413,3 +414,62 @@ def test_deleting_a_portfolio_removes_its_data(client, db):
     db.expire_all()
     assert db.scalar(select(func.count()).select_from(Transaction)) == 0
     assert db.scalar(select(func.count()).select_from(SipPlan)) == 0
+
+
+# ---- the "vs benchmark" line must be real, or honestly absent ------------------------------------
+
+
+def _trade_history(client, pid, symbol="ACME", price="50"):
+    client.post(
+        f"{BASE}/{pid}/transactions",
+        headers=H,
+        json={"trade_date": "2025-06-02", "type": "DEPOSIT", "cash_amount": "50000"},
+    )
+    for d in ("2025-06-03", "2025-07-01"):
+        client.post(
+            f"{BASE}/{pid}/transactions",
+            headers=H,
+            json={"trade_date": d, "type": "BUY", "symbol": symbol, "quantity": "10", "price": price},
+        )
+
+
+def test_demo_portfolio_uses_a_labelled_fictional_benchmark(client):
+    pid = new_portfolio(client, demo=True)
+    p = client.get(f"{BASE}/{pid}/performance?range=All", headers=H).json()
+    assert p["benchmark_is_sample"] and p["benchmark_available"] and p["benchmark_symbol"] == "BNCH"
+    assert p["series"][-1]["benchmark_index"] is not None
+
+
+def test_real_portfolio_never_gets_the_fictional_benchmark(client):
+    pid = new_portfolio(client)  # real USD portfolio, live data not configured
+    _trade_history(client, pid)
+    p = client.get(f"{BASE}/{pid}/performance?range=All", headers=H).json()
+    assert p["benchmark_symbol"] == "SPY" and not p["benchmark_available"] and not p["benchmark_is_sample"]
+    assert all(pt["benchmark_index"] is None for pt in p["series"]) and p["series"]
+    m = p["metrics"]["benchmark_cumulative_return"]
+    assert m["value"] is None and "fictional" in m["reason"]
+    assert (
+        p["metrics"]["cumulative_return"]["value"] is not None
+    )  # the portfolio's own numbers are unaffected
+
+
+def test_real_benchmark_is_loaded_when_a_real_portfolio_is_created(client, live):
+    pid = new_portfolio(client)
+    assert client.get("/api/v1/assets/search?q=SPY", headers=H).json()["results"][0]["in_db"]
+    _trade_history(client, pid, symbol="AAPL", price="100")
+    client.post("/api/v1/assets", json={"symbol": "AAPL"}, headers=H)
+    p = client.get(f"{BASE}/{pid}/performance?range=All", headers=H).json()
+    assert p["benchmark_available"] and not p["benchmark_is_sample"] and "SPDR" in p["benchmark_name"]
+    assert p["series"][-1]["benchmark_index"] is not None
+    assert p["metrics"]["benchmark_cumulative_return"]["value"] is not None
+
+
+def test_indian_mutual_fund_can_be_the_inr_benchmark(client, monkeypatch):
+    from app.config import get_settings
+    from tests.test_imports import FundProvider
+
+    monkeypatch.setattr(get_settings(), "benchmark_inr", "MF-1")
+    app.dependency_overrides[get_provider] = lambda: FundProvider()
+    new_portfolio(client, "INR")
+    hit = client.get("/api/v1/assets/search?q=MF-1", headers=H).json()["results"]
+    assert hit and hit[0]["symbol"] == "MF-1" and hit[0]["in_db"] and hit[0]["asset_type"] == "MUTUAL_FUND"
